@@ -142,7 +142,12 @@ describe("hidden lifetime extension", () => {
     expect(res.status).toBe(401);
   });
 
-  it("still grants room access after the original expiry once extended", async () => {
+  // Extension only works through POST /:id/extend on a still-live room (see
+  // the test above) — there's no "revive after the fact" path. Touching a
+  // room past its expiry lazily wipes its D1 row + R2 objects immediately
+  // (see lib/roomCleanup.ts), so it can't come back even if something edits
+  // expires_at directly afterward; the row is simply gone.
+  it("permanently deletes a room the moment it's touched past expiry", async () => {
     const pinHash = await hashPin("0000");
     const now = Date.now();
     await env.DB.prepare(
@@ -169,15 +174,22 @@ describe("hidden lifetime extension", () => {
     );
     expect(blockedRes.status).toBe(410);
 
+    const row = await env.DB.prepare("SELECT id FROM rooms WHERE id = ?")
+      .bind("soon-expiring-room")
+      .first();
+    expect(row).toBeNull();
+
+    // Nothing short of creating a brand new room brings it back — updating
+    // expires_at on a row that no longer exists is a no-op.
     await env.DB.prepare("UPDATE rooms SET expires_at = ? WHERE id = ?")
       .bind(Date.now() + 24 * 60 * 60 * 1000, "soon-expiring-room")
       .run();
 
-    const allowedRes = await app.request(
+    const stillGoneRes = await app.request(
       "/api/rooms/soon-expiring-room",
       { headers: { Authorization: `Bearer ${sessionToken}` } },
       env
     );
-    expect(allowedRes.status).toBe(200);
+    expect(stillGoneRes.status).toBe(404);
   });
 });

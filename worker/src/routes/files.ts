@@ -4,6 +4,7 @@ import { R2_FREE_TIER } from "../../../shared/types";
 import type { Env, RoomRow } from "../types";
 import { getConfig } from "../lib/config";
 import { getRoomById, isRoomLive, incrementRoomStorage, setRoomStorage } from "../lib/roomsRepo";
+import { deleteRoomData } from "../lib/roomCleanup";
 import {
   countFilesForRoom,
   deleteAllFilesForRoom,
@@ -34,7 +35,10 @@ async function authorizeRoom(c: Context<{ Bindings: Env }>, roomId: string) {
   const room = await getRoomById(c.env, roomId);
   const now = Date.now();
   if (!room) return { error: apiError(c, "ROOM_NOT_FOUND", "Room not found.") };
-  if (!isRoomLive(room, now)) return { error: apiError(c, "ROOM_EXPIRED", "This storage room has expired.") };
+  if (!isRoomLive(room, now)) {
+    await deleteRoomData(c.env, roomId);
+    return { error: apiError(c, "ROOM_EXPIRED", "This storage room has expired.") };
+  }
 
   const authorized = await requireRoomSession(c, roomId);
   if (!authorized) return { error: apiError(c, "UNAUTHORIZED", "A valid room session is required.") };

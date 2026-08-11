@@ -23,11 +23,13 @@ migrations_dir = "migrations"
 binding = "MEDIA_BUCKET"
 bucket_name = "sharizz-media"
 
-[assets]
-directory = "../frontend/dist"
-not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
-
+# This Worker is a cron-only deployment: the frontend and /api/* are now
+# served standalone from Cloudflare Pages (see frontend/wrangler.toml and
+# frontend/functions/api/[[path]].ts), since Pages Functions can't run
+# scheduled() triggers. This Worker's only job is the hourly expired-room
+# sweep below — its HTTP routes (same `app` the Pages Function reuses)
+# still work if hit directly at its workers.dev URL, but nothing routes
+# production traffic to them.
 [triggers]
 crons = ["0 * * * *"]
 

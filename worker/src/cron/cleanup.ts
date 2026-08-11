@@ -1,9 +1,10 @@
 import type { Env } from "../types";
-import { deleteAllFoldersForRoom } from "../lib/foldersRepo";
+import { deleteRoomData } from "../lib/roomCleanup";
 
-// Runs hourly (see wrangler.toml [triggers]). Idempotent: safe to run
-// repeatedly, tolerates R2 objects that are already missing, and only
-// removes D1 rows after their corresponding R2 objects are handled.
+// Runs hourly (see wrangler.toml [triggers]) as a backstop for rooms nobody
+// ever revisits after expiry — rooms that ARE touched past expiry get
+// reaped immediately by the lazy checks in routes/rooms.ts and
+// routes/files.ts instead of waiting for this sweep.
 export async function runCleanup(env: Env): Promise<{ roomsDeleted: number; filesDeleted: number }> {
   const now = Date.now();
 
@@ -14,29 +15,8 @@ export async function runCleanup(env: Env): Promise<{ roomsDeleted: number; file
     .all<{ id: string }>();
 
   let filesDeleted = 0;
-
   for (const room of expiredRooms) {
-    const { results: roomFiles } = await env.DB.prepare(
-      "SELECT id, storage_key FROM files WHERE room_id = ?"
-    )
-      .bind(room.id)
-      .all<{ id: string; storage_key: string }>();
-
-    for (const file of roomFiles) {
-      try {
-        await env.MEDIA_BUCKET.delete(file.storage_key);
-      } catch {
-        // Object already gone or transient R2 error — continue cleanup
-        // rather than aborting the whole batch.
-      }
-    }
-
-    await env.DB.prepare("DELETE FROM files WHERE room_id = ?").bind(room.id).run();
-    await deleteAllFoldersForRoom(env, room.id);
-    await env.DB.prepare("DELETE FROM pin_attempts WHERE room_id = ?").bind(room.id).run();
-    await env.DB.prepare("DELETE FROM rooms WHERE id = ?").bind(room.id).run();
-
-    filesDeleted += roomFiles.length;
+    filesDeleted += await deleteRoomData(env, room.id);
   }
 
   return { roomsDeleted: expiredRooms.length, filesDeleted };

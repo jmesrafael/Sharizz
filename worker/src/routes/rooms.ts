@@ -14,6 +14,7 @@ import { generateFolderId, generateRoomId } from "../lib/ids";
 import { validateFolderName } from "../lib/sanitize";
 import { isValidTimeCode, friendlyRoomName } from "../lib/timeGate";
 import { extendRoomExpiry, getRoomById, insertRoom, isRoomLive, toPublicRoom } from "../lib/roomsRepo";
+import { deleteRoomData } from "../lib/roomCleanup";
 import { listFilesForRoom, toPublicFile } from "../lib/filesRepo";
 import {
   countFoldersForRoom,
@@ -117,7 +118,10 @@ rooms.post("/:id/extend", async (c) => {
   const now = Date.now();
 
   if (!room) return apiError(c, "ROOM_NOT_FOUND", "Room not found.");
-  if (!isRoomLive(room, now)) return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
+  if (!isRoomLive(room, now)) {
+    await deleteRoomData(c.env, roomId);
+    return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
+  }
 
   const authorized = await requireRoomSession(c, roomId);
   if (!authorized) return apiError(c, "UNAUTHORIZED", "A valid room session is required.");
@@ -133,7 +137,10 @@ rooms.get("/:id", async (c) => {
   const now = Date.now();
 
   if (!room) return apiError(c, "ROOM_NOT_FOUND", "Room not found.");
-  if (!isRoomLive(room, now)) return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
+  if (!isRoomLive(room, now)) {
+    await deleteRoomData(c.env, roomId);
+    return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
+  }
 
   const authorized = await requireRoomSession(c, roomId);
   if (!authorized) return apiError(c, "UNAUTHORIZED", "A valid room session is required.");
@@ -157,7 +164,10 @@ rooms.post("/:id/folders", async (c) => {
   const now = Date.now();
 
   if (!room) return apiError(c, "ROOM_NOT_FOUND", "Room not found.");
-  if (!isRoomLive(room, now)) return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
+  if (!isRoomLive(room, now)) {
+    await deleteRoomData(c.env, roomId);
+    return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
+  }
 
   const authorized = await requireRoomSession(c, roomId);
   if (!authorized) return apiError(c, "UNAUTHORIZED", "A valid room session is required.");
@@ -203,7 +213,10 @@ rooms.get("/:id/events", async (c) => {
   const now = Date.now();
 
   if (!room) return apiError(c, "ROOM_NOT_FOUND", "Room not found.");
-  if (!isRoomLive(room, now)) return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
+  if (!isRoomLive(room, now)) {
+    await deleteRoomData(c.env, roomId);
+    return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
+  }
 
   const authorized = await requireRoomSession(c, roomId);
   if (!authorized) return apiError(c, "UNAUTHORIZED", "A valid room session is required.");
@@ -226,6 +239,7 @@ rooms.get("/:id/events", async (c) => {
         while (Date.now() - startedAt < MAX_DURATION_MS) {
           const currentRoom = await getRoomById(env, roomId);
           if (!currentRoom || !isRoomLive(currentRoom, Date.now())) {
+            if (currentRoom) await deleteRoomData(env, roomId);
             send("expired", {});
             break;
           }

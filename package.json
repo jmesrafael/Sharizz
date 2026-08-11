@@ -14,6 +14,7 @@
     "test:worker": "npm run test --workspace worker",
     "migrate:local": "npm run migrate:local --workspace worker",
     "migrate:remote": "npm run migrate:remote --workspace worker",
-    "deploy:worker": "npm run build:frontend && npm run deploy --workspace worker"
+    "deploy:pages": "npm run deploy --workspace frontend",
+    "deploy:cron": "npm run deploy --workspace worker"
   }
 }
