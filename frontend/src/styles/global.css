@@ -288,9 +288,10 @@ input {
 }
 
 .btn-small {
-  padding: 10px 14px;
-  min-height: 38px;
-  font-size: 13.5px;
+  padding: 0 12px;
+  min-height: 32px;
+  border-radius: 8px;
+  font-size: 12.5px;
 }
 
 .error-banner {
@@ -302,28 +303,27 @@ input {
   font-size: 13.5px;
 }
 
+/* Header and toolbar are two rows sharing the same left/right rhythm:
+   identity on the left, controls on the right, edges lining up between
+   the rows. */
 .room-header {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  text-align: center;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
 }
 
 .room-name {
   font-family: var(--font-display);
-  font-size: 19px;
+  font-size: 14.5px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   margin: 0;
-  word-break: break-word;
-}
-
-.room-header-pills {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hours-left {
@@ -393,8 +393,17 @@ input {
 
 .toolbar-row {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .action-row {
@@ -548,8 +557,9 @@ input {
 }
 
 .grid-size-btn {
-  min-width: 28px;
-  padding: 4px 8px;
+  min-width: 27px;
+  min-height: 32px;
+  padding: 0 8px;
   font-size: 11.5px;
   font-weight: 600;
   border: 1px solid var(--border);
@@ -998,6 +1008,14 @@ input {
     min-height: 44px;
   }
 
+  /* Compact controls still need a tappable target, but stay shorter than
+     the full-size buttons — and match .grid-size-btn so the toolbar row
+     lines up. */
+  .btn-small {
+    min-height: 38px;
+    padding: 0 14px;
+  }
+
   .thumb-select-overlay {
     width: 28px;
     height: 28px;
@@ -1005,8 +1023,8 @@ input {
 
   .grid-size-btn {
     min-width: 36px;
-    min-height: 36px;
-    padding: 8px 10px;
+    min-height: 38px;
+    padding: 0 10px;
   }
 
   .file-download {

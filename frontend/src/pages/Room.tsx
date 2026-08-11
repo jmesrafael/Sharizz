@@ -357,18 +357,21 @@ export default function Room() {
       )}
 
       <div className="container container-compact">
+        {/* Countdown renders itself fixed to the bottom-right corner, so its
+            position in the markup is irrelevant — kept out of the header row. */}
+        <CountdownTimer
+          roomId={room.id}
+          sessionToken={sessionToken}
+          expiresAt={room.expiresAt}
+          onExtended={handleExtended}
+        />
+
         <div className="room-header">
-          <h1 className="room-name">{room.roomName}</h1>
-          <div className="room-header-pills">
-            <CountdownTimer
-              roomId={room.id}
-              sessionToken={sessionToken}
-              expiresAt={room.expiresAt}
-              onExtended={handleExtended}
-            />
+          <div className="toolbar-group">
             <NetworkSignal />
-            <CopyLinkButton roomId={room.id} sessionToken={sessionToken} />
+            <h1 className="room-name">{room.roomName}</h1>
           </div>
+          <CopyLinkButton roomId={room.id} sessionToken={sessionToken} />
         </div>
 
         {folderStack.length > 0 && (
@@ -402,42 +405,46 @@ export default function Room() {
             e.target.value = "";
           }}
         />
-        <div className="toolbar-row" style={{ alignItems: "center" }}>
-          <button type="button" className="btn btn-primary btn-small" onClick={() => fileInputRef.current?.click()}>
-            + Upload
-          </button>
-          <button type="button" className="btn btn-secondary btn-small" onClick={() => setShowNewFolder((v) => !v)}>
-            + Folder
-          </button>
-          {visibleFiles.length > 0 && (
-            <div className="grid-controls" role="group" aria-label="Grid size">
-              {(Object.keys(GRID_SIZES) as Array<keyof typeof GRID_SIZES>).map((size) => (
-                <button
-                  key={size}
-                  type="button"
-                  className={`grid-size-btn${gridSize === size ? " active" : ""}`}
-                  onClick={() => setGridSize(size)}
-                >
-                  {size === "small" ? "S" : size === "medium" ? "M" : "L"}
-                </button>
-              ))}
-            </div>
-          )}
-          {files.length > 0 && !selectMode && (
-            <button type="button" className="btn btn-secondary btn-small" onClick={() => setSelectMode(true)}>
-              Select
+        <div className="toolbar-row">
+          <div className="toolbar-group">
+            <button type="button" className="btn btn-primary btn-small" onClick={() => fileInputRef.current?.click()}>
+              + Upload
             </button>
-          )}
-          {selectMode && (
-            <button
-              type="button"
-              className="btn btn-secondary btn-small"
-              onClick={clearSelection}
-              disabled={selectedIds.size === 0}
-            >
-              Clear Selection
+            <button type="button" className="btn btn-secondary btn-small" onClick={() => setShowNewFolder((v) => !v)}>
+              + Folder
             </button>
-          )}
+          </div>
+          <div className="toolbar-group">
+            {visibleFiles.length > 0 && (
+              <div className="grid-controls" role="group" aria-label="Grid size">
+                {(Object.keys(GRID_SIZES) as Array<keyof typeof GRID_SIZES>).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    className={`grid-size-btn${gridSize === size ? " active" : ""}`}
+                    onClick={() => setGridSize(size)}
+                  >
+                    {size === "small" ? "S" : size === "medium" ? "M" : "L"}
+                  </button>
+                ))}
+              </div>
+            )}
+            {files.length > 0 && !selectMode && (
+              <button type="button" className="btn btn-secondary btn-small" onClick={() => setSelectMode(true)}>
+                Select
+              </button>
+            )}
+            {selectMode && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-small"
+                onClick={clearSelection}
+                disabled={selectedIds.size === 0}
+              >
+                Clear Selection
+              </button>
+            )}
+          </div>
         </div>
 
         {showNewFolder && (
