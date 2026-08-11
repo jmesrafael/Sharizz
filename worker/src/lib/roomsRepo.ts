@@ -37,3 +37,7 @@ export async function incrementRoomStorage(env: Env, roomId: string, deltaBytes:
     .bind(deltaBytes, roomId)
     .run();
 }
+
+export async function setRoomStorage(env: Env, roomId: string, bytes: number): Promise<void> {
+  await env.DB.prepare("UPDATE rooms SET storage_bytes_used = ? WHERE id = ?").bind(bytes, roomId).run();
+}

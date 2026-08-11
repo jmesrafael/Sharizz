@@ -1,19 +1,26 @@
 import { Hono, type Context } from "hono";
 import { downloadZip } from "client-zip";
+import { R2_FREE_TIER } from "../../../shared/types";
 import type { Env } from "../types";
 import { getConfig } from "../lib/config";
-import { getRoomById, isRoomLive, incrementRoomStorage } from "../lib/roomsRepo";
+import { getRoomById, isRoomLive, incrementRoomStorage, setRoomStorage } from "../lib/roomsRepo";
 import {
   countFilesForRoom,
+  deleteAllFilesForRoom,
+  deleteFilesByIds,
   getFileById,
   insertFile,
+  listFilesByIds,
   listFilesForRoom,
 } from "../lib/filesRepo";
+import { getFolderById, deleteAllFoldersForRoom } from "../lib/foldersRepo";
 import { requireRoomSession } from "../lib/auth";
 import { apiError } from "../lib/errors";
 import { generateFileId } from "../lib/ids";
 import { buildStorageKey, sanitizeDisplayFilename } from "../lib/sanitize";
 import { resolveMimeType } from "../lib/mime";
+import { getUsageSnapshot, incrementClassAOps, incrementClassBOps } from "../lib/usageRepo";
+import type { FileRow } from "../types";
 
 export const files = new Hono<{ Bindings: Env }>();
 
@@ -48,6 +55,12 @@ files.put("/:id/files", async (c) => {
   const mimeType = resolveMimeType(declaredType, originalName);
   if (!mimeType) return apiError(c, "INVALID_FILE_TYPE", "This file type is not supported.");
 
+  const folderId = c.req.query("folderId") || null;
+  if (folderId) {
+    const folder = await getFolderById(c.env, folderId, roomId);
+    if (!folder) return apiError(c, "FOLDER_NOT_FOUND", "Folder not found.");
+  }
+
   const contentLength = Number(c.req.header("Content-Length") ?? "0");
   if (!contentLength || contentLength <= 0) {
     return apiError(c, "VALIDATION_ERROR", "Content-Length header is required.");
@@ -70,6 +83,21 @@ files.put("/:id/files", async (c) => {
       c,
       "ROOM_STORAGE_LIMIT",
       `This room has reached its ${Math.floor(config.MAX_ROOM_STORAGE / (1024 * 1024 * 1024))} GB storage limit.`
+    );
+  }
+
+  // Global stop-loss: refuse new uploads once total stored bytes (or this
+  // month's op counts) would clear R2's free tier, so the app never
+  // silently starts accruing storage/operation charges.
+  const usage = await getUsageSnapshot(c.env);
+  if (
+    usage.storageBytes + contentLength > R2_FREE_TIER.STORAGE_BYTES ||
+    usage.classAOps + 1 > R2_FREE_TIER.CLASS_A_OPS
+  ) {
+    return apiError(
+      c,
+      "GLOBAL_QUOTA_EXCEEDED",
+      "This app has reached its free storage quota for the month. Please try again later."
     );
   }
 
@@ -104,6 +132,7 @@ files.put("/:id/files", async (c) => {
   await insertFile(c.env, {
     id: fileId,
     roomId,
+    folderId,
     originalName,
     storageKey,
     mimeType,
@@ -111,11 +140,13 @@ files.put("/:id/files", async (c) => {
     uploadedAt,
   });
   await incrementRoomStorage(c.env, roomId, stored.size);
+  await incrementClassAOps(c.env);
 
   return c.json(
     {
       id: fileId,
       roomId,
+      folderId,
       originalName,
       mimeType,
       fileSize: stored.size,
@@ -144,6 +175,7 @@ files.get("/:id/files/:fileId", async (c) => {
 
   const object = await c.env.MEDIA_BUCKET.get(file.storage_key, range ? { range } : undefined);
   if (!object) return apiError(c, "FILE_NOT_FOUND", "File not found.");
+  await incrementClassBOps(c.env);
 
   const headers = new Headers();
   headers.set("Content-Type", file.mime_type);
@@ -191,21 +223,20 @@ function parseRange(header: string | undefined, fileSize: number): { offset: num
   return { offset: start, length: Math.min(end, fileSize - 1) - start + 1 };
 }
 
-files.get("/:id/download-all", async (c) => {
-  const roomId = c.req.param("id");
-  const auth = await authorizeRoom(c, roomId);
-  if ("error" in auth) return auth.error;
-
+async function streamZip(
+  c: Context<{ Bindings: Env }>,
+  roomFiles: FileRow[],
+  zipFilename: string
+): Promise<Response> {
   const config = getConfig(c.env);
-  const roomFiles = await listFilesForRoom(c.env, roomId);
-  if (roomFiles.length === 0) return apiError(c, "FILE_NOT_FOUND", "This room has no files yet.");
+  if (roomFiles.length === 0) return apiError(c, "FILE_NOT_FOUND", "No files to download.");
 
   const totalBytes = roomFiles.reduce((sum, f) => sum + f.file_size, 0);
   if (totalBytes > config.DOWNLOAD_ALL_ZIP_MAX_BYTES) {
     return apiError(
       c,
       "ROOM_STORAGE_LIMIT",
-      "This room is too large to zip. Please download files individually."
+      "This selection is too large to zip. Please download files individually."
     );
   }
 
@@ -215,6 +246,7 @@ files.get("/:id/download-all", async (c) => {
     for (const f of roomFiles) {
       const object = await bucket.get(f.storage_key);
       if (!object) continue; // skip missing objects rather than failing the whole zip
+      await incrementClassBOps(c.env);
       yield {
         name: f.original_name,
         input: object.body,
@@ -226,8 +258,81 @@ files.get("/:id/download-all", async (c) => {
 
   const zipResponse = downloadZip(entries());
   const headers = new Headers(zipResponse.headers);
-  headers.set("Content-Disposition", `attachment; filename="sharizz-files.zip"`);
+  headers.set("Content-Disposition", `attachment; filename="${zipFilename}"`);
   headers.set("Cache-Control", "private, no-store");
 
   return new Response(zipResponse.body, { headers, status: 200 });
+}
+
+files.get("/:id/download-all", async (c) => {
+  const roomId = c.req.param("id");
+  const auth = await authorizeRoom(c, roomId);
+  if ("error" in auth) return auth.error;
+
+  const roomFiles = await listFilesForRoom(c.env, roomId);
+  return streamZip(c, roomFiles, "sharizz-files.zip");
+});
+
+// Multi-select download: the client passes a comma-separated list of file
+// IDs (GET, not POST, so plain <a href> links work without a form/fetch).
+files.get("/:id/download-selected", async (c) => {
+  const roomId = c.req.param("id");
+  const auth = await authorizeRoom(c, roomId);
+  if ("error" in auth) return auth.error;
+
+  const idsParam = c.req.query("fileIds") ?? "";
+  const fileIds = idsParam
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (fileIds.length === 0) return apiError(c, "VALIDATION_ERROR", "No files selected.");
+
+  const selectedFiles = await listFilesByIds(c.env, roomId, fileIds);
+  return streamZip(c, selectedFiles, "sharizz-selected-files.zip");
+});
+
+// Bulk delete: removes the given files from R2 and the DB and frees their
+// bytes from the room's storage quota. Used for "delete selected" after a
+// bulk download, so a room doesn't have to sit on files the recipient
+// already saved locally.
+files.delete("/:id/files", async (c) => {
+  const roomId = c.req.param("id");
+  const auth = await authorizeRoom(c, roomId);
+  if ("error" in auth) return auth.error;
+
+  let body: { fileIds?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, "VALIDATION_ERROR", "Invalid request body.");
+  }
+
+  const fileIds = Array.isArray(body.fileIds) ? body.fileIds.filter((id): id is string => typeof id === "string") : [];
+  if (fileIds.length === 0) return apiError(c, "VALIDATION_ERROR", "No files selected.");
+
+  const deleted = await deleteFilesByIds(c.env, roomId, fileIds);
+  if (deleted.length === 0) return apiError(c, "FILE_NOT_FOUND", "File not found.");
+
+  await Promise.all(deleted.map((f) => c.env.MEDIA_BUCKET.delete(f.storage_key)));
+  const freedBytes = deleted.reduce((sum, f) => sum + f.file_size, 0);
+  await incrementRoomStorage(c.env, roomId, -freedBytes);
+
+  return c.json({ deletedIds: deleted.map((f) => f.id), freedBytes }, 200);
+});
+
+// Clear storage: wipes every file and folder in the room, freeing the full
+// quota. Distinct from letting the room expire — this is an explicit,
+// irreversible action the room owner takes (e.g. right after downloading
+// everything) rather than waiting out the 7-day lifetime.
+files.delete("/:id/clear", async (c) => {
+  const roomId = c.req.param("id");
+  const auth = await authorizeRoom(c, roomId);
+  if ("error" in auth) return auth.error;
+
+  const allFiles = await deleteAllFilesForRoom(c.env, roomId);
+  await Promise.all(allFiles.map((f) => c.env.MEDIA_BUCKET.delete(f.storage_key)));
+  await deleteAllFoldersForRoom(c.env, roomId);
+  await setRoomStorage(c.env, roomId, 0);
+
+  return c.json({ deletedCount: allFiles.length }, 200);
 });

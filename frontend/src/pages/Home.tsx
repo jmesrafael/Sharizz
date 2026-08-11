@@ -10,15 +10,15 @@ export default function Home() {
 
         <h1 className="headline">Transfer photos and videos without compression.</h1>
         <p className="subtext">
-          Upload original files, share a temporary room, and let others download the originals.
+          Upload original files, share temporary storage, and let others download the originals.
         </p>
 
         <div className="home-actions">
           <Link to="/create" className="btn btn-primary btn-block">
-            Create Storage Room
+            Create Storage
           </Link>
           <Link to="/enter" className="btn btn-secondary btn-block">
-            Enter Storage Room
+            Enter Storage
           </Link>
         </div>
 
@@ -30,7 +30,7 @@ export default function Home() {
             <span className="dot">●</span> No compression, no quality reduction
           </div>
           <div className="item">
-            <span className="dot">●</span> Rooms automatically expire after 7 days
+            <span className="dot">●</span> Storage automatically expires after 7 days
           </div>
         </div>
       </div>

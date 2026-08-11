@@ -9,6 +9,7 @@ export interface RoomPublic {
 export interface FilePublic {
   id: string;
   roomId: string;
+  folderId: string | null;
   originalName: string;
   mimeType: string;
   fileSize: number;
@@ -16,6 +17,19 @@ export interface FilePublic {
   width: number | null;
   height: number | null;
   duration: number | null;
+}
+
+export interface FolderPublic {
+  id: string;
+  roomId: string;
+  parentFolderId: string | null;
+  folderName: string;
+  createdAt: number;
+}
+
+export interface CreateFolderRequest {
+  folderName: string;
+  parentFolderId?: string | null;
 }
 
 export interface CreateRoomRequest {
@@ -40,6 +54,7 @@ export interface EnterRoomResponse {
 export interface RoomStateResponse {
   room: RoomPublic;
   files: FilePublic[];
+  folders: FolderPublic[];
 }
 
 export interface ApiErrorBody {
@@ -60,10 +75,38 @@ export type ApiErrorCode =
   | "ROOM_STORAGE_LIMIT"
   | "INVALID_FILE_TYPE"
   | "FILE_NOT_FOUND"
+  | "FOLDER_NOT_FOUND"
+  | "INVALID_FOLDER_NAME"
+  | "TOO_MANY_FOLDERS"
   | "STORAGE_UNAVAILABLE"
   | "RATE_LIMITED"
   | "VALIDATION_ERROR"
+  | "GLOBAL_QUOTA_EXCEEDED"
   | "INTERNAL_ERROR";
+
+// Cloudflare R2's free-tier ceilings. Storage is billed as GB-month (a
+// time-integrated average), so tracking current bytes-in-bucket is a
+// conservative proxy, not an exact GB-month figure — it trends the same
+// direction and errs on the side of warning early.
+export const R2_FREE_TIER = {
+  STORAGE_BYTES: 10 * 1024 * 1024 * 1024, // 10 GB stored
+  CLASS_A_OPS: 1_000_000, // writes (uploads) per month
+  CLASS_B_OPS: 10_000_000, // reads (downloads) per month
+  WARN_THRESHOLD_PCT: 0.8,
+} as const;
+
+export type UsageLevel = "ok" | "warning" | "exceeded";
+
+export interface UsageStatus {
+  month: string;
+  storageBytes: number;
+  storagePct: number;
+  classAOps: number;
+  classAPct: number;
+  classBOps: number;
+  classBPct: number;
+  level: UsageLevel;
+}
 
 export const LIMITS = {
   MAX_FILE_SIZE: 5 * 1024 * 1024 * 1024, // 5 GB per file
@@ -71,6 +114,9 @@ export const LIMITS = {
   MAX_ROOM_STORAGE: 20 * 1024 * 1024 * 1024, // 20 GB per room
   MAX_ROOM_NAME_LENGTH: 40,
   MIN_ROOM_NAME_LENGTH: 2,
+  MAX_FOLDER_NAME_LENGTH: 60,
+  MIN_FOLDER_NAME_LENGTH: 1,
+  MAX_FOLDERS_PER_ROOM: 100,
   MAX_PIN_ATTEMPTS: 8,
   PIN_MIN_LENGTH: 4,
   PIN_MAX_LENGTH: 8,

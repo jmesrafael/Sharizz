@@ -12,6 +12,20 @@ export function validateRoomName(name: string, maxLength: number): string | null
   return null;
 }
 
+const FOLDER_NAME_PATTERN = /^[^\\/\x00-\x1f]+$/;
+
+export function validateFolderName(name: string): string | null {
+  const trimmed = name.trim();
+  if (trimmed.length < LIMITS.MIN_FOLDER_NAME_LENGTH) return "Folder name is too short.";
+  if (trimmed.length > LIMITS.MAX_FOLDER_NAME_LENGTH) {
+    return `Folder name must be ${LIMITS.MAX_FOLDER_NAME_LENGTH} characters or fewer.`;
+  }
+  if (!FOLDER_NAME_PATTERN.test(trimmed)) {
+    return "Folder name can't contain slashes or control characters.";
+  }
+  return null;
+}
+
 export function validatePin(pin: string): string | null {
   if (!/^\d+$/.test(pin)) return "PIN must contain only digits.";
   if (pin.length < LIMITS.PIN_MIN_LENGTH || pin.length > LIMITS.PIN_MAX_LENGTH) {

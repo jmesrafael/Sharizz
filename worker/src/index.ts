@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import type { Env } from "./types";
 import { rooms } from "./routes/rooms";
 import { files } from "./routes/files";
+import { usage } from "./routes/usage";
 import { runCleanup } from "./cron/cleanup";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -21,6 +22,7 @@ app.get("/api/health", (c) => c.json({ ok: true }));
 
 app.route("/api/rooms", rooms);
 app.route("/api/rooms", files);
+app.route("/api/usage", usage);
 
 app.notFound((c) => c.json({ error: "Not found.", code: "ROOM_NOT_FOUND" }, 404));
 

@@ -32,8 +32,8 @@ export default function CreateRoom() {
           SHA<span className="brand-mark">RIZZ</span>
         </Link>
 
-        <h1 className="headline">Create Storage Room</h1>
-        <p className="subtext">Give your room a name and a PIN. Anyone with both can join.</p>
+        <h1 className="headline">Create Storage</h1>
+        <p className="subtext">Give your storage a name and a PIN. Anyone with both can join.</p>
 
         <form className="card" onSubmit={handleSubmit}>
           <div className="field">
@@ -70,7 +70,7 @@ export default function CreateRoom() {
           {error && <div className="error-banner">{error}</div>}
 
           <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-            {submitting ? "Creating…" : "Create Room"}
+            {submitting ? "Creating…" : "Create Storage"}
           </button>
         </form>
       </div>

@@ -1,4 +1,5 @@
 import type { Env } from "../types";
+import { deleteAllFoldersForRoom } from "../lib/foldersRepo";
 
 // Runs hourly (see wrangler.toml [triggers]). Idempotent: safe to run
 // repeatedly, tolerates R2 objects that are already missing, and only
@@ -31,6 +32,7 @@ export async function runCleanup(env: Env): Promise<{ roomsDeleted: number; file
     }
 
     await env.DB.prepare("DELETE FROM files WHERE room_id = ?").bind(room.id).run();
+    await deleteAllFoldersForRoom(env, room.id);
     await env.DB.prepare("DELETE FROM pin_attempts WHERE room_id = ?").bind(room.id).run();
     await env.DB.prepare("DELETE FROM rooms WHERE id = ?").bind(room.id).run();
 

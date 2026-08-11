@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import type {
+  CreateFolderRequest,
   CreateRoomRequest,
   CreateRoomResponse,
   EnterRoomRequest,
@@ -10,10 +11,17 @@ import type {
 import { LIMITS } from "../../../shared/types";
 import { getConfig } from "../lib/config";
 import { hashPin, verifyPin } from "../lib/pin";
-import { generateRoomId } from "../lib/ids";
-import { validateRoomName, validatePin } from "../lib/sanitize";
+import { generateFolderId, generateRoomId } from "../lib/ids";
+import { validateFolderName, validatePin, validateRoomName } from "../lib/sanitize";
 import { getRoomById, insertRoom, isRoomLive, toPublicRoom } from "../lib/roomsRepo";
 import { listFilesForRoom, toPublicFile } from "../lib/filesRepo";
+import {
+  countFoldersForRoom,
+  getFolderById,
+  insertFolder,
+  listFoldersForRoom,
+  toPublicFolder,
+} from "../lib/foldersRepo";
 import { createSessionToken } from "../lib/session";
 import { requireRoomSession } from "../lib/auth";
 import { apiError } from "../lib/errors";
@@ -117,12 +125,58 @@ rooms.get("/:id", async (c) => {
   const authorized = await requireRoomSession(c, roomId);
   if (!authorized) return apiError(c, "UNAUTHORIZED", "A valid room session is required.");
 
-  const files = await listFilesForRoom(c.env, roomId);
+  const [files, folders] = await Promise.all([
+    listFilesForRoom(c.env, roomId),
+    listFoldersForRoom(c.env, roomId),
+  ]);
   const response: RoomStateResponse = {
     room: toPublicRoom(room, now),
     files: files.map(toPublicFile),
+    folders: folders.map(toPublicFolder),
   };
   return c.json(response, 200);
+});
+
+rooms.post("/:id/folders", async (c) => {
+  const roomId = c.req.param("id");
+  const room = await getRoomById(c.env, roomId);
+  const now = Date.now();
+
+  if (!room) return apiError(c, "ROOM_NOT_FOUND", "Room not found.");
+  if (!isRoomLive(room, now)) return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
+
+  const authorized = await requireRoomSession(c, roomId);
+  if (!authorized) return apiError(c, "UNAUTHORIZED", "A valid room session is required.");
+
+  let body: Partial<CreateFolderRequest>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, "VALIDATION_ERROR", "Invalid request body.");
+  }
+
+  const folderName = (body.folderName ?? "").toString().trim();
+  const nameError = validateFolderName(folderName);
+  if (nameError) return apiError(c, "INVALID_FOLDER_NAME", nameError);
+
+  const parentFolderId = body.parentFolderId ?? null;
+  if (parentFolderId) {
+    const parent = await getFolderById(c.env, parentFolderId, roomId);
+    if (!parent) return apiError(c, "FOLDER_NOT_FOUND", "Parent folder not found.");
+  }
+
+  const folderCount = await countFoldersForRoom(c.env, roomId);
+  if (folderCount >= LIMITS.MAX_FOLDERS_PER_ROOM) {
+    return apiError(c, "TOO_MANY_FOLDERS", `Rooms are limited to ${LIMITS.MAX_FOLDERS_PER_ROOM} folders.`);
+  }
+
+  const id = generateFolderId();
+  await insertFolder(c.env, { id, roomId, parentFolderId, folderName, createdAt: now });
+
+  return c.json(
+    toPublicFolder({ id, room_id: roomId, parent_folder_id: parentFolderId, folder_name: folderName, created_at: now }),
+    201
+  );
 });
 
 // Lightweight near-real-time updates: the client opens this SSE stream and
@@ -162,11 +216,17 @@ rooms.get("/:id/events", async (c) => {
             break;
           }
 
-          const files = await listFilesForRoom(env, roomId);
-          const signature = files.map((f) => `${f.id}:${f.uploaded_at}`).join(",");
+          const [files, folders] = await Promise.all([
+            listFilesForRoom(env, roomId),
+            listFoldersForRoom(env, roomId),
+          ]);
+          const signature =
+            files.map((f) => `${f.id}:${f.uploaded_at}`).join(",") +
+            "|" +
+            folders.map((f) => f.id).join(",");
           if (signature !== lastSignature) {
             lastSignature = signature;
-            send("files", files.map(toPublicFile));
+            send("state", { files: files.map(toPublicFile), folders: folders.map(toPublicFolder) });
           } else {
             send("ping", {});
           }

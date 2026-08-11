@@ -23,6 +23,7 @@ export interface RoomRow {
 export interface FileRow {
   id: string;
   room_id: string;
+  folder_id: string | null;
   original_name: string;
   storage_key: string;
   mime_type: string;
@@ -32,4 +33,12 @@ export interface FileRow {
   height: number | null;
   duration: number | null;
   checksum: string | null;
+}
+
+export interface FolderRow {
+  id: string;
+  room_id: string;
+  parent_folder_id: string | null;
+  folder_name: string;
+  created_at: number;
 }

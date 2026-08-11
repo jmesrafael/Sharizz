@@ -1,20 +1,25 @@
 import { useEffect, useRef } from "react";
-import type { FilePublic } from "@shared/types";
+import type { FilePublic, FolderPublic } from "@shared/types";
 import { openRoomEventStream } from "../api/client";
 
-// Subscribes to the room's SSE stream for near-real-time file updates and
-// falls back to nothing fancy on disconnect — the caller can always fall
-// back to a manual refresh, so we just reconnect once and give up quietly
-// if the room truly went away (server will have sent an "expired" event).
+interface RoomEventState {
+  files: FilePublic[];
+  folders: FolderPublic[];
+}
+
+// Subscribes to the room's SSE stream for near-real-time file/folder
+// updates and falls back to nothing fancy on disconnect — the caller can
+// always fall back to a manual refresh, so we just reconnect once and give
+// up quietly if the room truly went away (server sends an "expired" event).
 export function useRoomEvents(
   roomId: string,
   sessionToken: string,
-  onFiles: (files: FilePublic[]) => void,
+  onState: (state: RoomEventState) => void,
   onExpired: () => void
 ) {
-  const onFilesRef = useRef(onFiles);
+  const onStateRef = useRef(onState);
   const onExpiredRef = useRef(onExpired);
-  onFilesRef.current = onFiles;
+  onStateRef.current = onState;
   onExpiredRef.current = onExpired;
 
   useEffect(() => {
@@ -25,8 +30,8 @@ export function useRoomEvents(
       if (cancelled) return;
       source = openRoomEventStream(roomId, sessionToken);
 
-      source.addEventListener("files", (event) => {
-        onFilesRef.current(JSON.parse((event as MessageEvent).data));
+      source.addEventListener("state", (event) => {
+        onStateRef.current(JSON.parse((event as MessageEvent).data));
       });
       source.addEventListener("expired", () => {
         onExpiredRef.current();

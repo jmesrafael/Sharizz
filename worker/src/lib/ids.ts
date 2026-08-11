@@ -19,3 +19,7 @@ export function generateFileId(): string {
 export function generateSessionId(): string {
   return randomBase64Url(24);
 }
+
+export function generateFolderId(): string {
+  return randomBase64Url(12);
+}

@@ -3,7 +3,9 @@ import type {
   CreateRoomResponse,
   EnterRoomResponse,
   FilePublic,
+  FolderPublic,
   RoomStateResponse,
+  UsageStatus,
 } from "@shared/types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787";
@@ -71,6 +73,43 @@ export function downloadAllUrl(roomId: string, sessionToken: string): string {
   return `${API_BASE_URL}/api/rooms/${roomId}/download-all?token=${encodeURIComponent(sessionToken)}`;
 }
 
+export function downloadSelectedUrl(roomId: string, sessionToken: string, fileIds: string[]): string {
+  const ids = fileIds.map(encodeURIComponent).join(",");
+  return `${API_BASE_URL}/api/rooms/${roomId}/download-selected?fileIds=${ids}&token=${encodeURIComponent(sessionToken)}`;
+}
+
+export function deleteFiles(roomId: string, sessionToken: string, fileIds: string[]): Promise<{ deletedIds: string[] }> {
+  return request(`/api/rooms/${roomId}/files`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+    body: JSON.stringify({ fileIds }),
+  });
+}
+
+export function clearStorage(roomId: string, sessionToken: string): Promise<{ deletedCount: number }> {
+  return request(`/api/rooms/${roomId}/clear`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  });
+}
+
+export function getUsageStatus(): Promise<UsageStatus> {
+  return request("/api/usage");
+}
+
+export function createFolder(
+  roomId: string,
+  sessionToken: string,
+  folderName: string,
+  parentFolderId: string | null
+): Promise<FolderPublic> {
+  return request(`/api/rooms/${roomId}/folders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+    body: JSON.stringify({ folderName, parentFolderId }),
+  });
+}
+
 export function openRoomEventStream(roomId: string, sessionToken: string): EventSource {
   // EventSource can't set custom headers, so the token travels in the
   // query string for this connection only — it's short-lived and scoped
@@ -89,12 +128,14 @@ export function uploadFile(
   roomId: string,
   sessionToken: string,
   file: File,
-  handlers: UploadHandlers
+  handlers: UploadHandlers,
+  folderId: string | null = null
 ): { abort: () => void } {
   const xhr = new XMLHttpRequest();
+  const folderParam = folderId ? `&folderId=${encodeURIComponent(folderId)}` : "";
   const url = `${API_BASE_URL}/api/rooms/${roomId}/files?name=${encodeURIComponent(
     file.name
-  )}&type=${encodeURIComponent(file.type)}`;
+  )}&type=${encodeURIComponent(file.type)}${folderParam}`;
 
   xhr.open("PUT", url, true);
   xhr.setRequestHeader("Authorization", `Bearer ${sessionToken}`);

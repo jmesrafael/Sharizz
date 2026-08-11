@@ -34,12 +34,12 @@ export default function EnterRoom() {
           SHA<span className="brand-mark">RIZZ</span>
         </Link>
 
-        <h1 className="headline">Enter Storage Room</h1>
-        <p className="subtext">Enter the room name or ID, plus its PIN.</p>
+        <h1 className="headline">Enter Storage</h1>
+        <p className="subtext">Enter the storage name or ID, plus its PIN.</p>
 
         <form className="card" onSubmit={handleSubmit}>
           <div className="field">
-            <label htmlFor="identifier">Room Name or Room ID</label>
+            <label htmlFor="identifier">Storage Name or Storage ID</label>
             <input
               id="identifier"
               type="text"
@@ -71,7 +71,7 @@ export default function EnterRoom() {
           {error && <div className="error-banner">{error}</div>}
 
           <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-            {submitting ? "Entering…" : "Enter Room"}
+            {submitting ? "Entering…" : "Enter Storage"}
           </button>
         </form>
       </div>
