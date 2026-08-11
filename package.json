@@ -1,0 +1,19 @@
+{
+  "name": "sharizz",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Sharizz - temporary original-quality photo and video transfer rooms",
+  "workspaces": [
+    "frontend",
+    "worker"
+  ],
+  "scripts": {
+    "dev:worker": "npm run dev --workspace worker",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build:frontend": "npm run build --workspace frontend",
+    "test:worker": "npm run test --workspace worker",
+    "migrate:local": "npm run migrate:local --workspace worker",
+    "migrate:remote": "npm run migrate:remote --workspace worker",
+    "deploy:worker": "npm run deploy --workspace worker"
+  }
+}

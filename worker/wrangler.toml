@@ -1,0 +1,37 @@
+name = "sharizz-worker"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ─────────────────────────────────────────────────────────────────────────
+# IMPORTANT — DO NOT DEPLOY until this file is filled in against the
+# CORRECT Cloudflare account (see README.md). account_id is intentionally
+# left unset so `wrangler` will not silently deploy to the wrong account.
+# ─────────────────────────────────────────────────────────────────────────
+# account_id = "REPLACE_WITH_INTENDED_ACCOUNT_ID"
+
+[vars]
+MAX_FILE_SIZE = "5368709120"
+MAX_FILES_PER_ROOM = "500"
+MAX_ROOM_STORAGE = "21474836480"
+MAX_ROOM_NAME_LENGTH = "40"
+MAX_PIN_ATTEMPTS = "8"
+DOWNLOAD_ALL_ZIP_MAX_BYTES = "2147483648"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sharizz-db"
+# database_id must be retrieved from the intended Cloudflare account via:
+#   npx wrangler d1 info sharizz-db
+database_id = "REPLACE_WITH_REAL_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "sharizz-media"
+
+[triggers]
+crons = ["0 * * * *"]
+
+[observability]
+enabled = true

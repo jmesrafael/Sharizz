@@ -1,0 +1,49 @@
+import { LIMITS } from "../../../shared/types";
+
+const ROOM_NAME_PATTERN = /^[A-Za-z0-9 _-]+$/;
+
+export function validateRoomName(name: string, maxLength: number): string | null {
+  const trimmed = name.trim();
+  if (trimmed.length < LIMITS.MIN_ROOM_NAME_LENGTH) return "Room name is too short.";
+  if (trimmed.length > maxLength) return `Room name must be ${maxLength} characters or fewer.`;
+  if (!ROOM_NAME_PATTERN.test(trimmed)) {
+    return "Room name may only contain letters, numbers, spaces, hyphens, and underscores.";
+  }
+  return null;
+}
+
+export function validatePin(pin: string): string | null {
+  if (!/^\d+$/.test(pin)) return "PIN must contain only digits.";
+  if (pin.length < LIMITS.PIN_MIN_LENGTH || pin.length > LIMITS.PIN_MAX_LENGTH) {
+    return `PIN must be between ${LIMITS.PIN_MIN_LENGTH} and ${LIMITS.PIN_MAX_LENGTH} digits.`;
+  }
+  return null;
+}
+
+const CONTROL_CHAR_CODES_MAX = 0x1f;
+
+// Strips path separators and control characters so the name is safe to
+// display and to use in a Content-Disposition header. This is for DISPLAY
+// only — storage keys always use generated IDs, never the original
+// filename, so path traversal via filename is not possible.
+export function sanitizeDisplayFilename(name: string): string {
+  const noSeparators = name.replace(/[\\/]/g, "_");
+  let cleaned = "";
+  for (const ch of noSeparators) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code > CONTROL_CHAR_CODES_MAX && code !== 0x7f) cleaned += ch;
+  }
+  const trimmed = cleaned.trim().slice(0, 255);
+  return trimmed.length > 0 ? trimmed : "file";
+}
+
+export function buildStorageKey(roomId: string, fileId: string, originalName: string): string {
+  const ext = getSafeExtension(originalName);
+  return `rooms/${roomId}/${fileId}${ext}`;
+}
+
+function getSafeExtension(name: string): string {
+  const match = /\.[A-Za-z0-9]{1,10}$/.exec(name);
+  if (!match) return "";
+  return match[0].toLowerCase();
+}

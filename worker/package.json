@@ -1,0 +1,25 @@
+{
+  "name": "sharizz-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "migrate:local": "wrangler d1 migrations apply sharizz-db --local",
+    "migrate:remote": "wrangler d1 migrations apply sharizz-db --remote",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.14",
+    "client-zip": "^2.4.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.6.4",
+    "@cloudflare/workers-types": "^4.20241224.0",
+    "typescript": "^5.7.2",
+    "vitest": "~2.1.8",
+    "wrangler": "^4.0.0"
+  }
+}
