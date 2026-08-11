@@ -8,6 +8,7 @@ const FALLBACK_LOCKOUT_MS = 60 * 1000;
 export default function Home() {
   const navigate = useNavigate();
   const [code, setCode] = useState("");
+  const [showCode, setShowCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -89,20 +90,54 @@ export default function Home() {
           <form className="card" onSubmit={handleSubmit}>
             <div className="field">
               <label htmlFor="code">Password</label>
-              <input
-                id="code"
-                type="password"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="••••"
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                minLength={4}
-                maxLength={4}
-                autoComplete="off"
-                autoFocus
-                required
-              />
+              <div className="password-input-wrap">
+                <input
+                  id="code"
+                  type={showCode ? "text" : "password"}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="Password"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  minLength={4}
+                  maxLength={4}
+                  autoComplete="off"
+                  autoFocus
+                  required
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowCode((v) => !v)}
+                  aria-label={showCode ? "Hide password" : "Show password"}
+                  tabIndex={-1}
+                >
+                  {showCode ? (
+                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                      <path
+                        d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A10.4 10.4 0 0112 5c5 0 9 4 10.5 7-.6 1.2-1.5 2.6-2.7 3.8M6.2 6.2C4 7.6 2.4 9.5 1.5 12c1.5 3 5.5 7 10.5 7 1.3 0 2.5-.2 3.6-.7"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                      <path
+                        d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
 
             {error && (

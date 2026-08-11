@@ -191,9 +191,34 @@ input {
   box-shadow: 0 0 0 3px rgba(201, 168, 106, 0.12);
 }
 
-.field input[type="password"] {
-  letter-spacing: 0.5em;
-  text-align: center;
+.password-input-wrap {
+  position: relative;
+  display: flex;
+}
+
+.password-input-wrap input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  color: var(--text-dim);
 }
 
 .field-error {
