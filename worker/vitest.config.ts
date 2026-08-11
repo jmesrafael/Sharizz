@@ -10,7 +10,7 @@ export default defineWorkersConfig(async () => {
       setupFiles: ["./test/setup.ts"],
       poolOptions: {
         workers: {
-          wrangler: { configPath: "./wrangler.toml" },
+          wrangler: { configPath: "./wrangler.test.toml" },
           miniflare: {
             d1Databases: ["DB"],
             r2Buckets: ["MEDIA_BUCKET"],

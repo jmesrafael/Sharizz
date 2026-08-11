@@ -713,10 +713,16 @@ input {
 }
 
 .file-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   color: var(--text-faint);
-  font-size: 14px;
   text-decoration: none;
+}
+
+.file-download:hover {
+  color: var(--text);
 }
 
 .progress-track {

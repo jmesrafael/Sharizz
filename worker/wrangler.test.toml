@@ -1,0 +1,41 @@
+# Test-only config, consumed by vitest.config.ts instead of wrangler.toml.
+#
+# Identical to wrangler.toml except it omits [assets]: the bundled wrangler
+# inside @cloudflare/vitest-pool-workers (pinned to an old major version via
+# the workspace's ^0.6.4 range) rejects `run_worker_first` as an array —
+# that syntax needs a newer wrangler than the test pool carries internally.
+# Asset serving isn't something these tests exercise anyway (they hit the
+# Worker's routes directly against miniflare bindings), so the block is
+# simply not needed here. Keep every other setting in sync with
+# wrangler.toml by hand until the test pool is upgraded.
+
+name = "sharizz-worker"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+account_id = "393fdc11838d18b9d1793acd906cdffe"
+
+[vars]
+MAX_FILE_SIZE = "5368709120"
+MAX_FILES_PER_ROOM = "500"
+MAX_ROOM_STORAGE = "21474836480"
+MAX_GATE_ATTEMPTS = "3"
+GATE_LOCKOUT_MS = "60000"
+DOWNLOAD_ALL_ZIP_MAX_BYTES = "2147483648"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sharizz-db"
+database_id = "937d592d-fd42-4ef4-aed7-0ff5ef7d73ea"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "sharizz-media"
+
+[triggers]
+crons = ["0 * * * *"]
+
+[observability]
+enabled = true
