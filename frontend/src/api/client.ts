@@ -11,7 +11,12 @@ import type {
   UsageStatus,
 } from "@shared/types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787";
+// Empty string means same-origin (relative) requests — correct for
+// production, where the Worker serves both the API and this static app
+// from one origin. Local dev overrides this via VITE_API_BASE_URL in
+// frontend/.env, since the Vite dev server and `wrangler dev` run on
+// different ports.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export class ApiError extends Error {
   code: string;

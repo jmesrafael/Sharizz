@@ -91,14 +91,12 @@ Covers: PIN hashing/verification, session token signing/expiry, room creation vi
    ```bash
    npm run migrate:remote
    ```
-6. Deploy the Worker:
+6. Build the frontend and deploy the Worker (one deployment serves both the static app and the `/api/*` routes from a single origin — see `[assets]` in `wrangler.toml`):
    ```bash
    npm run deploy:worker
    ```
-7. Build the frontend and deploy it to your static host of choice, pointing `VITE_API_BASE_URL` at the deployed Worker URL:
-   ```bash
-   npm run build:frontend
-   ```
+   No `VITE_API_BASE_URL` is needed for production builds: the frontend calls `/api/...` relative to its own origin, and since the Worker now serves both, they're always the same origin. `VITE_API_BASE_URL` is only used in local dev (see above), where the Vite dev server and `wrangler dev` run on different ports.
+7. If a separate Cloudflare Pages project was previously deployed for the frontend, delete it (or stop pushing to it) — the Worker deployed in step 6 now serves the frontend directly. Point any custom domain at the Worker instead.
 
 ## Configurable limits
 
