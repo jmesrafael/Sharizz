@@ -3,7 +3,10 @@ pages_build_output_dir = "dist"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-account_id = "393fdc11838d18b9d1793acd906cdffe"
+# No account_id here: Pages config doesn't support it — the project's
+# account is fixed by whichever Cloudflare account the "sharizz" Pages
+# project was created under. (worker/wrangler.toml still sets account_id
+# since that's a plain Worker, where it's required/allowed.)
 
 [vars]
 MAX_FILE_SIZE = "5368709120"
