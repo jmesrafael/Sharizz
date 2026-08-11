@@ -16,7 +16,7 @@ export interface UploadItem {
   file: File;
   folderId: string | null;
   progress: number;
-  status: "uploading" | "success" | "error";
+  status: "uploading" | "error";
   error?: string;
 }
 
@@ -40,9 +40,13 @@ export function useUploads(roomId: string, sessionToken: string, onUploaded: (fi
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, progress: Math.min(99, percent) } : it)));
   }, []);
 
+  // The item disappears from the progress list the instant it succeeds —
+  // the file itself shows up in the gallery grid right away, so a lingering
+  // "Complete" bar would just be a second, redundant confirmation.
   const setSuccess = useCallback(
     (key: string, uploaded: FilePublic) => {
-      setItems((prev) => prev.map((it) => (it.key === key ? { ...it, progress: 100, status: "success" } : it)));
+      setItems((prev) => prev.filter((it) => it.key !== key));
+      abortHandlers.current.delete(key);
       onUploaded(uploaded);
     },
     [onUploaded]

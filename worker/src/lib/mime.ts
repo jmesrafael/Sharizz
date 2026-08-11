@@ -10,6 +10,7 @@ const EXTENSION_TO_MIME: Record<string, string> = {
   gif: "image/gif",
   tif: "image/tiff",
   tiff: "image/tiff",
+  dng: "image/x-adobe-dng",
   mp4: "video/mp4",
   mov: "video/quicktime",
   m4v: "video/x-m4v",

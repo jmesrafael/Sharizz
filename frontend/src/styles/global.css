@@ -101,6 +101,10 @@ input {
   gap: 22px;
 }
 
+.container-compact {
+  gap: 10px;
+}
+
 .brand {
   font-weight: 600;
   font-size: 15px;
@@ -307,7 +311,7 @@ input {
 
 .room-name {
   font-family: var(--font-display);
-  font-size: 25px;
+  font-size: 19px;
   font-weight: 600;
   letter-spacing: -0.01em;
   margin: 0;
@@ -340,82 +344,29 @@ input {
   -webkit-tap-highlight-color: transparent;
 }
 
-.network-signal {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 12.5px;
-  color: var(--text-dim);
-  letter-spacing: 0.02em;
+.network-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: default;
 }
 
-.network-signal.offline {
-  color: var(--danger);
-  border-color: rgba(229, 100, 90, 0.35);
+.network-dot-good {
+  background: var(--success);
+  box-shadow: 0 0 0 2px rgba(111, 191, 148, 0.15), 0 0 7px 1px rgba(111, 191, 148, 0.75);
 }
 
-.network-signal-bars {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 10px;
+.network-dot-fair {
+  background: var(--warning);
+  box-shadow: 0 0 0 2px rgba(217, 167, 92, 0.15), 0 0 7px 1px rgba(217, 167, 92, 0.7);
 }
 
-.network-signal-bar {
-  width: 3px;
-  border-radius: 1px;
-  background: var(--border);
-}
-
-.network-signal-bar:nth-child(1) {
-  height: 4px;
-}
-
-.network-signal-bar:nth-child(2) {
-  height: 7px;
-}
-
-.network-signal-bar:nth-child(3) {
-  height: 10px;
-}
-
-.network-signal-bar.active {
-  background: var(--accent);
-}
-
-.network-signal.offline .network-signal-bar {
-  background: rgba(229, 100, 90, 0.3);
-}
-
-.share-row {
-  display: flex;
-  gap: 10px;
-}
-
-.upload-zone {
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  padding: 26px;
-  text-align: center;
-  color: var(--text-dim);
-  background: var(--surface);
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.upload-zone.drag-active {
-  border-color: var(--accent);
-  border-style: solid;
-  background: rgba(201, 168, 106, 0.08);
-}
-
-.upload-hint {
-  font-size: 12.5px;
-  color: var(--text-faint);
-  margin: 8px 0 0;
+.network-dot-poor,
+.network-dot-offline {
+  background: var(--danger);
+  box-shadow: 0 0 0 2px rgba(229, 100, 90, 0.15), 0 0 7px 1px rgba(229, 100, 90, 0.65);
 }
 
 .drop-overlay {
@@ -444,6 +395,15 @@ input {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.action-row {
+  display: flex;
+  gap: 8px;
+}
+
+.action-row .btn {
+  flex: 1;
 }
 
 .breadcrumb {
@@ -601,7 +561,7 @@ input {
   margin-bottom: 10px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 6px;
   overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
@@ -736,12 +696,38 @@ input {
   transition: width 0.2s ease;
 }
 
-.progress-fill.success {
-  background: var(--success);
-}
-
 .progress-fill.error {
   background: var(--danger);
+}
+
+.upload-progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.upload-progress-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-progress-item .progress-track {
+  flex: 1;
+  min-width: 80px;
+  margin-top: 0;
+}
+
+.upload-progress-status {
+  flex-shrink: 0;
+  min-width: 30px;
+  text-align: right;
+}
+
+.upload-progress-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .empty-state {

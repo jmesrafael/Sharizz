@@ -176,6 +176,7 @@ export const ALLOWED_MIME_TYPES = new Set([
   "image/webp",
   "image/gif",
   "image/tiff",
+  "image/x-adobe-dng",
   "video/mp4",
   "video/quicktime",
   "video/x-m4v",

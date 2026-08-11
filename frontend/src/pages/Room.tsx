@@ -350,69 +350,88 @@ export default function Room() {
         </div>
       )}
 
-      <div className="container">
+      <div className="container container-compact">
         <div className="room-header">
           <h1 className="room-name">{room.roomName}</h1>
-          <p className="subtext">Original files. No compression.</p>
           <div className="room-header-pills">
+            <CountdownTimer
+              roomId={room.id}
+              sessionToken={sessionToken}
+              expiresAt={room.expiresAt}
+              onExtended={handleExtended}
+            />
             <NetworkSignal />
+            <CopyLinkButton roomId={room.id} sessionToken={sessionToken} />
           </div>
         </div>
 
-        <CountdownTimer
-          roomId={room.id}
-          sessionToken={sessionToken}
-          expiresAt={room.expiresAt}
-          onExtended={handleExtended}
+        {folderStack.length > 0 && (
+          <div className="breadcrumb">
+            <button type="button" onClick={() => setFolderStack([])}>
+              {room.roomName}
+            </button>
+            {folderStack.map((folder, i) => (
+              <span key={folder.id} style={{ display: "contents" }}>
+                <span className="breadcrumb-sep">/</span>
+                <button
+                  type="button"
+                  className={i === folderStack.length - 1 ? "current" : ""}
+                  onClick={() => setFolderStack(folderStack.slice(0, i + 1))}
+                >
+                  {folder.folderName}
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*,video/*,.heic,.heif,.dng,.mov"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            handleFilesChosen(Array.from(e.target.files ?? []));
+            e.target.value = "";
+          }}
         />
-
-        <div className="share-row">
-          <CopyLinkButton roomId={room.id} sessionToken={sessionToken} />
-        </div>
-
-        <div className="breadcrumb">
-          <button
-            type="button"
-            className={folderStack.length === 0 ? "current" : ""}
-            onClick={() => setFolderStack([])}
-          >
-            {room.roomName}
+        <div className="toolbar-row" style={{ alignItems: "center" }}>
+          <button type="button" className="btn btn-primary btn-small" onClick={() => fileInputRef.current?.click()}>
+            + Upload
           </button>
-          {folderStack.map((folder, i) => (
-            <span key={folder.id} style={{ display: "contents" }}>
-              <span className="breadcrumb-sep">/</span>
-              <button
-                type="button"
-                className={i === folderStack.length - 1 ? "current" : ""}
-                onClick={() => setFolderStack(folderStack.slice(0, i + 1))}
-              >
-                {folder.folderName}
-              </button>
-            </span>
-          ))}
-        </div>
-
-        <div className="upload-zone">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/*,video/*,.heic,.heif"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              handleFilesChosen(Array.from(e.target.files ?? []));
-              e.target.value = "";
-            }}
-          />
-          <div className="toolbar-row" style={{ justifyContent: "center" }}>
-            <button type="button" className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>
-              + Upload Files
+          <button type="button" className="btn btn-secondary btn-small" onClick={() => setShowNewFolder((v) => !v)}>
+            + Folder
+          </button>
+          {visibleFiles.length > 0 && (
+            <div className="grid-controls" role="group" aria-label="Grid size">
+              {(Object.keys(GRID_SIZES) as Array<keyof typeof GRID_SIZES>).map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  className={`grid-size-btn${gridSize === size ? " active" : ""}`}
+                  onClick={() => setGridSize(size)}
+                >
+                  {size === "small" ? "S" : size === "medium" ? "M" : "L"}
+                </button>
+              ))}
+            </div>
+          )}
+          {files.length > 0 && !selectMode && (
+            <button type="button" className="btn btn-secondary btn-small" onClick={() => setSelectMode(true)}>
+              Select
             </button>
-            <button type="button" className="btn btn-secondary" onClick={() => setShowNewFolder((v) => !v)}>
-              + New Folder
+          )}
+          {selectMode && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-small"
+              onClick={clearSelection}
+              disabled={selectedIds.size === 0}
+            >
+              Clear Selection
             </button>
-          </div>
-          <p className="upload-hint">Drag and drop files anywhere on this page to upload</p>
+          )}
         </div>
 
         {showNewFolder && (
@@ -434,78 +453,42 @@ export default function Room() {
 
         <UploadProgressList items={items} onRetry={retry} onDismiss={dismiss} />
 
-        <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Files</h2>
-            <div className="toolbar-row" style={{ alignItems: "center" }}>
-              {visibleFiles.length > 0 && (
-                <div className="grid-controls" role="group" aria-label="Grid size">
-                  {(Object.keys(GRID_SIZES) as Array<keyof typeof GRID_SIZES>).map((size) => (
-                    <button
-                      key={size}
-                      type="button"
-                      className={`grid-size-btn${gridSize === size ? " active" : ""}`}
-                      onClick={() => setGridSize(size)}
-                    >
-                      {size === "small" ? "S" : size === "medium" ? "M" : "L"}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {files.length > 0 && !selectMode && (
-                <button type="button" className="btn btn-secondary btn-small" onClick={() => setSelectMode(true)}>
-                  Select
-                </button>
-              )}
-              {selectMode && (
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-small"
-                  onClick={clearSelection}
-                  disabled={selectedIds.size === 0}
-                >
-                  Clear Selection
-                </button>
-              )}
-            </div>
+        {!hasContent ? (
+          <div className="empty-state">No files yet. Upload the first one above, or drag files in.</div>
+        ) : (
+          <div className="file-list" style={{ ["--tile-size" as string]: `${GRID_SIZES[gridSize]}px` }}>
+            {visibleFolders.map((folder) => (
+              <FolderCard key={folder.id} folder={folder} onOpen={(f) => setFolderStack((prev) => [...prev, f])} />
+            ))}
+            {visibleFiles.map((file) => (
+              <FileCard
+                key={file.id}
+                file={file}
+                roomId={room.id}
+                sessionToken={sessionToken}
+                onPreview={(f) => setPreviewFileId(f.id)}
+                selectMode={selectMode}
+                selected={selectedIds.has(file.id)}
+                onToggleSelect={toggleSelect}
+                downloadStatus={downloadStatuses.get(file.id)}
+              />
+            ))}
           </div>
-
-          {!hasContent ? (
-            <div className="empty-state">No files yet. Upload the first one above, or drag files in.</div>
-          ) : (
-            <div className="file-list" style={{ ["--tile-size" as string]: `${GRID_SIZES[gridSize]}px` }}>
-              {visibleFolders.map((folder) => (
-                <FolderCard key={folder.id} folder={folder} onOpen={(f) => setFolderStack((prev) => [...prev, f])} />
-              ))}
-              {visibleFiles.map((file) => (
-                <FileCard
-                  key={file.id}
-                  file={file}
-                  roomId={room.id}
-                  sessionToken={sessionToken}
-                  onPreview={(f) => setPreviewFileId(f.id)}
-                  selectMode={selectMode}
-                  selected={selectedIds.has(file.id)}
-                  onToggleSelect={toggleSelect}
-                  downloadStatus={downloadStatuses.get(file.id)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        )}
 
         {actionError && <div className="error-banner">{actionError}</div>}
 
-        {files.length > 1 && !selectMode && (
-          <a className="btn btn-secondary btn-block" href={downloadAllUrl(room.id, sessionToken)}>
-            Download All
-          </a>
-        )}
-
         {files.length > 0 && !selectMode && (
-          <button type="button" className="btn btn-danger btn-block" onClick={handleClearStorage} disabled={clearing}>
-            {clearing ? "Clearing…" : "Clear Storage"}
-          </button>
+          <div className="action-row">
+            {files.length > 1 && (
+              <a className="btn btn-secondary btn-small" href={downloadAllUrl(room.id, sessionToken)}>
+                Download All
+              </a>
+            )}
+            <button type="button" className="btn btn-danger btn-small" onClick={handleClearStorage} disabled={clearing}>
+              {clearing ? "Clearing…" : "Clear Storage"}
+            </button>
+          </div>
         )}
       </div>
 

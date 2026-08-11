@@ -15,7 +15,7 @@ export default function CopyLinkButton({ roomId, sessionToken }: { roomId: strin
   }
 
   return (
-    <button type="button" className="btn btn-secondary" onClick={handleCopy}>
+    <button type="button" className="btn btn-secondary btn-small" onClick={handleCopy}>
       {copied ? "Copied!" : "Copy Link"}
     </button>
   );
