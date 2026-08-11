@@ -101,7 +101,10 @@ rooms.post("/", async (c) => {
   // Deliberately not tied to the room's expiry — see SESSION_TOKEN_LIFETIME_MS.
   const sessionToken = await createSessionToken(c.env.SESSION_SECRET, id, now + LIMITS.SESSION_TOKEN_LIFETIME_MS);
 
-  const response: CreateRoomResponse = { room: toPublicRoom(room, now), sessionToken };
+  const response: CreateRoomResponse = {
+    room: toPublicRoom(room, now, config.MAX_ROOM_STORAGE),
+    sessionToken,
+  };
   return c.json(response, 201);
 });
 
@@ -135,12 +138,13 @@ rooms.get("/:id", async (c) => {
   const authorized = await requireRoomSession(c, roomId);
   if (!authorized) return apiError(c, "UNAUTHORIZED", "A valid room session is required.");
 
+  const config = getConfig(c.env);
   const [files, folders] = await Promise.all([
     listFilesForRoom(c.env, roomId),
     listFoldersForRoom(c.env, roomId),
   ]);
   const response: RoomStateResponse = {
-    room: toPublicRoom(room, now),
+    room: toPublicRoom(room, now, config.MAX_ROOM_STORAGE),
     files: files.map(toPublicFile),
     folders: folders.map(toPublicFolder),
   };

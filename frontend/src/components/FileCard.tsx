@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FilePublic } from "@shared/types";
-import { downloadFileUrl } from "../api/client";
+import { downloadFileUrl, thumbnailUrl } from "../api/client";
 
 function extensionLabel(mimeType: string): string {
   const parts = mimeType.split("/");
@@ -31,6 +31,19 @@ export default function FileCard({
   const [thumbFailed, setThumbFailed] = useState(false);
   const isImage = file.mimeType.startsWith("image/");
   const url = downloadFileUrl(roomId, file.id, sessionToken);
+  // A generated preview (see heicThumbnail.ts) is always browser-renderable,
+  // so prefer it over the original for formats like HEIC/HEIF that most
+  // browsers can't decode natively. Falls back to the original when no
+  // thumbnail exists — fine for browsers (Safari) that can render it directly.
+  const thumbSrc = file.hasThumbnail ? thumbnailUrl(roomId, file.id, sessionToken) : url;
+
+  // If the original failed to render (unsupported format) and a thumbnail
+  // shows up moments later — the background upload in useUploads finishes
+  // after the file card is already visible — give the new source a fresh try
+  // instead of staying stuck on the placeholder.
+  useEffect(() => {
+    setThumbFailed(false);
+  }, [thumbSrc]);
 
   return (
     <div className={`file-card${selected ? " selected" : ""}`}>
@@ -57,7 +70,14 @@ export default function FileCard({
           />
         )}
         {isImage && !thumbFailed ? (
-          <img className="file-thumb" src={url} alt="" loading="lazy" onError={() => setThumbFailed(true)} />
+          <img
+            key={thumbSrc}
+            className="file-thumb"
+            src={thumbSrc}
+            alt=""
+            loading="lazy"
+            onError={() => setThumbFailed(true)}
+          />
         ) : (
           <div className="file-thumb-placeholder">{extensionLabel(file.mimeType)}</div>
         )}

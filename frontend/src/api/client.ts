@@ -72,6 +72,35 @@ export function downloadSelectedUrl(roomId: string, sessionToken: string, fileId
   return `${API_BASE_URL}/api/rooms/${roomId}/download-selected?fileIds=${ids}&token=${encodeURIComponent(sessionToken)}`;
 }
 
+// Small client-generated JPEG derivative for formats browsers can't render
+// natively (HEIC/HEIF) — see frontend/src/lib/heicThumbnail.ts. Distinct
+// from downloadFileUrl: this never touches the original object.
+export function thumbnailUrl(roomId: string, fileId: string, sessionToken: string): string {
+  return `${API_BASE_URL}/api/rooms/${roomId}/files/${fileId}/thumbnail?token=${encodeURIComponent(sessionToken)}`;
+}
+
+export async function uploadThumbnail(
+  roomId: string,
+  sessionToken: string,
+  fileId: string,
+  blob: Blob
+): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/files/${fileId}/thumbnail`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${sessionToken}`, "Content-Type": "application/octet-stream" },
+    body: blob,
+  });
+  if (!res.ok) {
+    let body: ApiErrorBody;
+    try {
+      body = await res.json();
+    } catch {
+      throw new ApiError({ error: "Couldn't save the thumbnail.", code: "STORAGE_UNAVAILABLE" }, res.status);
+    }
+    throw new ApiError(body, res.status);
+  }
+}
+
 // Fetches the file fully, then hands the browser a blob URL to save — unlike
 // a plain <a download> click, this resolves only once the bytes have
 // actually arrived, so callers can drive a real "downloading -> downloaded"

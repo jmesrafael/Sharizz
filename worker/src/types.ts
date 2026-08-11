@@ -33,6 +33,8 @@ export interface FileRow {
   height: number | null;
   duration: number | null;
   checksum: string | null;
+  thumbnail_key: string | null;
+  thumbnail_size: number | null;
 }
 
 export interface FolderRow {

@@ -36,6 +36,10 @@ export function buildStorageKey(roomId: string, fileId: string, originalName: st
   return `rooms/${roomId}/${fileId}${ext}`;
 }
 
+export function buildThumbnailKey(roomId: string, fileId: string): string {
+  return `rooms/${roomId}/thumbs/${fileId}.jpg`;
+}
+
 function getSafeExtension(name: string): string {
   const match = /\.[A-Za-z0-9]{1,10}$/.exec(name);
   if (!match) return "";

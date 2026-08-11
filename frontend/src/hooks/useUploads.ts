@@ -8,8 +8,10 @@ import {
   initMultipartUpload,
   uploadFile,
   uploadPart,
+  uploadThumbnail,
 } from "../api/client";
 import { clearUploadSession, loadUploadSession, saveUploadSession, type UploadSession } from "../api/uploadSessions";
+import { generateThumbnail, needsClientThumbnail } from "../lib/heicThumbnail";
 
 export interface UploadItem {
   key: string;
@@ -32,7 +34,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function useUploads(roomId: string, sessionToken: string, onUploaded: (file: FilePublic) => void) {
+export function useUploads(
+  roomId: string,
+  sessionToken: string,
+  onUploaded: (file: FilePublic) => void,
+  onThumbnailReady?: (fileId: string) => void
+) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const abortHandlers = useRef(new Map<string, () => void>());
 
@@ -40,16 +47,32 @@ export function useUploads(roomId: string, sessionToken: string, onUploaded: (fi
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, progress: Math.min(99, percent) } : it)));
   }, []);
 
+  // Best-effort: only formats browsers can't render natively (HEIC/HEIF)
+  // get a thumbnail attempt, and it only succeeds where the browser can
+  // actually decode the original (in practice, Safari/iOS). Failure here
+  // is silent and harmless — the file just falls back to today's behavior.
+  const maybeGenerateThumbnail = useCallback(
+    (file: File, uploaded: FilePublic) => {
+      if (!needsClientThumbnail(uploaded.mimeType)) return;
+      generateThumbnail(file)
+        .then((blob) => (blob ? uploadThumbnail(roomId, sessionToken, uploaded.id, blob) : undefined))
+        .then(() => onThumbnailReady?.(uploaded.id))
+        .catch(() => {});
+    },
+    [roomId, sessionToken, onThumbnailReady]
+  );
+
   // The item disappears from the progress list the instant it succeeds —
   // the file itself shows up in the gallery grid right away, so a lingering
   // "Complete" bar would just be a second, redundant confirmation.
   const setSuccess = useCallback(
-    (key: string, uploaded: FilePublic) => {
+    (key: string, file: File, uploaded: FilePublic) => {
       setItems((prev) => prev.filter((it) => it.key !== key));
       abortHandlers.current.delete(key);
       onUploaded(uploaded);
+      maybeGenerateThumbnail(file, uploaded);
     },
-    [onUploaded]
+    [onUploaded, maybeGenerateThumbnail]
   );
 
   const setFailed = useCallback((key: string, message: string) => {
@@ -166,7 +189,7 @@ export function useUploads(roomId: string, sessionToken: string, onUploaded: (fi
           file,
           {
             onProgress: (percent) => setProgress(key, percent),
-            onSuccess: (uploaded) => setSuccess(key, uploaded),
+            onSuccess: (uploaded) => setSuccess(key, file, uploaded),
             onError: (message) => setFailed(key, message),
           },
           folderId
@@ -181,7 +204,7 @@ export function useUploads(roomId: string, sessionToken: string, onUploaded: (fi
       });
 
       runChunkedUpload(key, file, folderId, aborted)
-        .then((uploaded) => setSuccess(key, uploaded))
+        .then((uploaded) => setSuccess(key, file, uploaded))
         .catch((err) => {
           setFailed(key, err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Upload failed. Please try again.");
         });

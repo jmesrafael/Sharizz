@@ -10,13 +10,15 @@ export function isRoomLive(room: RoomRow, now: number): boolean {
   return room.status === "active" && now < room.expires_at;
 }
 
-export function toPublicRoom(room: RoomRow, now: number): RoomPublic {
+export function toPublicRoom(room: RoomRow, now: number, storageLimitBytes: number): RoomPublic {
   return {
     id: room.id,
     roomName: room.room_name,
     createdAt: room.created_at,
     expiresAt: room.expires_at,
     status: isRoomLive(room, now) ? "active" : "expired",
+    storageBytesUsed: room.storage_bytes_used,
+    storageLimitBytes,
   };
 }
 

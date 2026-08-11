@@ -18,6 +18,7 @@ import FileCard from "../components/FileCard";
 import FolderCard from "../components/FolderCard";
 import NetworkSignal from "../components/NetworkSignal";
 import PreviewModal from "../components/PreviewModal";
+import StorageMeter from "../components/StorageMeter";
 import UploadProgressList from "../components/UploadProgressList";
 import { useUploads } from "../hooks/useUploads";
 import { useRoomEvents } from "../hooks/useRoomEvents";
@@ -99,6 +100,10 @@ export default function Room() {
     setFiles((prev) => [...prev, file]);
   }, []);
 
+  const onThumbnailReady = useCallback((fileId: string) => {
+    setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, hasThumbnail: true } : f)));
+  }, []);
+
   const handleExtended = useCallback((newExpiresAt: number) => {
     setState((prev) => (prev.kind === "ready" ? { ...prev, room: { ...prev.room, expiresAt: newExpiresAt } } : prev));
   }, []);
@@ -107,7 +112,8 @@ export default function Room() {
   const { items, enqueueFiles, retry, dismiss } = useUploads(
     roomId,
     ready ? state.sessionToken : "",
-    onUploaded
+    onUploaded,
+    onThumbnailReady
   );
 
   useRoomEvents(
@@ -490,6 +496,11 @@ export default function Room() {
             </button>
           </div>
         )}
+
+        <StorageMeter
+          usedBytes={files.reduce((sum, f) => sum + f.fileSize, 0)}
+          limitBytes={room.storageLimitBytes}
+        />
       </div>
 
       {selectMode && (

@@ -4,6 +4,8 @@ export interface RoomPublic {
   createdAt: number;
   expiresAt: number;
   status: "active" | "expired";
+  storageBytesUsed: number;
+  storageLimitBytes: number;
 }
 
 export interface FilePublic {
@@ -17,6 +19,11 @@ export interface FilePublic {
   width: number | null;
   height: number | null;
   duration: number | null;
+  // True when a small JPEG preview exists for a format browsers can't
+  // render natively (currently HEIC/HEIF). Generated client-side at upload
+  // time by whichever browser could decode the original — never derived
+  // from it server-side, so it may simply be absent.
+  hasThumbnail: boolean;
 }
 
 export interface FolderPublic {

@@ -12,17 +12,23 @@ import {
   insertFile,
   listFilesByIds,
   listFilesForRoom,
+  setFileThumbnail,
 } from "../lib/filesRepo";
 import { getFolderById, deleteAllFoldersForRoom } from "../lib/foldersRepo";
 import { requireRoomSession } from "../lib/auth";
 import { apiError } from "../lib/errors";
 import { generateFileId } from "../lib/ids";
-import { buildStorageKey, sanitizeDisplayFilename } from "../lib/sanitize";
+import { buildStorageKey, buildThumbnailKey, sanitizeDisplayFilename } from "../lib/sanitize";
 import { resolveMimeType } from "../lib/mime";
 import { getUsageSnapshot, incrementClassAOps, incrementClassBOps } from "../lib/usageRepo";
 import type { FileRow } from "../types";
 
 export const files = new Hono<{ Bindings: Env }>();
+
+// Generous cap for a downscaled JPEG preview — the client targets a ~480px
+// max dimension, so a legitimate thumbnail is well under this; it exists
+// only to stop the endpoint being used to smuggle in arbitrary blobs.
+const THUMBNAIL_MAX_BYTES = 1024 * 1024;
 
 async function authorizeRoom(c: Context<{ Bindings: Env }>, roomId: string) {
   const room = await getRoomById(c.env, roomId);
@@ -194,6 +200,7 @@ files.put("/:id/files", async (c) => {
       width: null,
       height: null,
       duration: null,
+      hasThumbnail: false,
     },
     201
   );
@@ -366,6 +373,7 @@ files.post("/:id/uploads/:uploadId/complete", async (c) => {
       width: null,
       height: null,
       duration: null,
+      hasThumbnail: false,
     },
     201
   );
@@ -427,6 +435,80 @@ files.get("/:id/files/:fileId", async (c) => {
   }
 
   headers.set("Content-Length", String(file.file_size));
+  return new Response(object.body, { headers });
+});
+
+// Accepts a small JPEG derivative generated client-side (see
+// frontend/src/lib/heicThumbnail.ts) for formats browsers can't render
+// natively, e.g. HEIC/HEIF. Purely additive — the original object this
+// file's storage_key points to is never read or modified here, so
+// downloads always stay byte-for-byte regardless of whether a thumbnail
+// exists.
+files.put("/:id/files/:fileId/thumbnail", async (c) => {
+  const roomId = c.req.param("id");
+  const fileId = c.req.param("fileId");
+  const auth = await authorizeRoom(c, roomId);
+  if ("error" in auth) return auth.error;
+
+  const file = await getFileById(c.env, fileId, roomId);
+  if (!file) return apiError(c, "FILE_NOT_FOUND", "File not found.");
+
+  const contentLength = Number(c.req.header("Content-Length") ?? "0");
+  if (!contentLength || contentLength <= 0) {
+    return apiError(c, "VALIDATION_ERROR", "Content-Length header is required.");
+  }
+  if (contentLength > THUMBNAIL_MAX_BYTES) {
+    return apiError(c, "FILE_TOO_LARGE", "Thumbnail is too large.");
+  }
+
+  const body = c.req.raw.body;
+  if (!body) return apiError(c, "VALIDATION_ERROR", "Request body is required.");
+
+  const thumbnailKey = buildThumbnailKey(roomId, fileId);
+
+  let stored;
+  try {
+    stored = await c.env.MEDIA_BUCKET.put(thumbnailKey, body, {
+      httpMetadata: { contentType: "image/jpeg" },
+      customMetadata: { roomId, fileId },
+    });
+  } catch {
+    return apiError(c, "STORAGE_UNAVAILABLE", "Couldn't save the thumbnail.");
+  }
+  if (!stored) return apiError(c, "STORAGE_UNAVAILABLE", "Couldn't save the thumbnail.");
+
+  if (stored.size > THUMBNAIL_MAX_BYTES) {
+    await c.env.MEDIA_BUCKET.delete(thumbnailKey);
+    return apiError(c, "FILE_TOO_LARGE", "Thumbnail is too large.");
+  }
+
+  // Replacing an existing thumbnail (retry) — free the old bytes before
+  // counting the new ones so room storage doesn't drift upward.
+  const previousSize = file.thumbnail_size ?? 0;
+  await setFileThumbnail(c.env, fileId, roomId, thumbnailKey, stored.size);
+  await incrementRoomStorage(c.env, roomId, stored.size - previousSize);
+  await incrementClassAOps(c.env);
+
+  return c.json({ hasThumbnail: true }, 200);
+});
+
+files.get("/:id/files/:fileId/thumbnail", async (c) => {
+  const roomId = c.req.param("id");
+  const fileId = c.req.param("fileId");
+  const auth = await authorizeRoom(c, roomId);
+  if ("error" in auth) return auth.error;
+
+  const file = await getFileById(c.env, fileId, roomId);
+  if (!file || !file.thumbnail_key) return apiError(c, "FILE_NOT_FOUND", "No thumbnail for this file.");
+
+  const object = await c.env.MEDIA_BUCKET.get(file.thumbnail_key);
+  if (!object) return apiError(c, "FILE_NOT_FOUND", "No thumbnail for this file.");
+  await incrementClassBOps(c.env);
+
+  const headers = new Headers();
+  headers.set("Content-Type", "image/jpeg");
+  headers.set("Cache-Control", "private, no-store");
+  headers.set("Content-Length", String(file.thumbnail_size ?? 0));
   return new Response(object.body, { headers });
 });
 
@@ -546,8 +628,13 @@ files.delete("/:id/files", async (c) => {
   const deleted = await deleteFilesByIds(c.env, roomId, fileIds);
   if (deleted.length === 0) return apiError(c, "FILE_NOT_FOUND", "File not found.");
 
-  await Promise.all(deleted.map((f) => c.env.MEDIA_BUCKET.delete(f.storage_key)));
-  const freedBytes = deleted.reduce((sum, f) => sum + f.file_size, 0);
+  await Promise.all(
+    deleted.flatMap((f) => [
+      c.env.MEDIA_BUCKET.delete(f.storage_key),
+      ...(f.thumbnail_key ? [c.env.MEDIA_BUCKET.delete(f.thumbnail_key)] : []),
+    ])
+  );
+  const freedBytes = deleted.reduce((sum, f) => sum + f.file_size + (f.thumbnail_size ?? 0), 0);
   await incrementRoomStorage(c.env, roomId, -freedBytes);
 
   return c.json({ deletedIds: deleted.map((f) => f.id), freedBytes }, 200);
@@ -563,7 +650,12 @@ files.delete("/:id/clear", async (c) => {
   if ("error" in auth) return auth.error;
 
   const allFiles = await deleteAllFilesForRoom(c.env, roomId);
-  await Promise.all(allFiles.map((f) => c.env.MEDIA_BUCKET.delete(f.storage_key)));
+  await Promise.all(
+    allFiles.flatMap((f) => [
+      c.env.MEDIA_BUCKET.delete(f.storage_key),
+      ...(f.thumbnail_key ? [c.env.MEDIA_BUCKET.delete(f.thumbnail_key)] : []),
+    ])
+  );
   await deleteAllFoldersForRoom(c.env, roomId);
   await setRoomStorage(c.env, roomId, 0);
 

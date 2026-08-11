@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FilePublic } from "@shared/types";
-import { downloadFileUrl } from "../api/client";
+import { downloadFileUrl, thumbnailUrl } from "../api/client";
 
 const SWIPE_THRESHOLD_PX = 50;
 
@@ -101,7 +101,18 @@ export default function PreviewModal({
             {!unsupported && isVideo && (
               <video key={file.id} src={url} controls autoPlay onError={() => setUnsupported(true)} />
             )}
-            {(unsupported || (!isImage && !isVideo)) && (
+            {unsupported && file.hasThumbnail && (
+              <div className="unsupported-preview">
+                <img src={thumbnailUrl(roomId, file.id, sessionToken)} alt={file.originalName} />
+                <div className="card">
+                  <span className="file-meta">Preview only — download to get the original, full-quality file.</span>
+                  <a className="btn btn-primary" href={url} download={file.originalName}>
+                    Download Original
+                  </a>
+                </div>
+              </div>
+            )}
+            {(unsupported && !file.hasThumbnail) || (!isImage && !isVideo) ? (
               <div className="card">
                 <span className="file-name">{file.originalName}</span>
                 <span className="file-meta">
@@ -111,7 +122,7 @@ export default function PreviewModal({
                   Download
                 </a>
               </div>
-            )}
+            ) : null}
           </div>
 
           {canNext && (
