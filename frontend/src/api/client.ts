@@ -40,6 +40,11 @@ export function createRoom(roomName: string, pin: string): Promise<CreateRoomRes
   });
 }
 
+export async function lookupRoomByName(name: string): Promise<string> {
+  const { id } = await request<{ id: string }>(`/api/rooms/lookup?name=${encodeURIComponent(name)}`);
+  return id;
+}
+
 export function enterRoom(roomId: string, pin: string): Promise<EnterRoomResponse> {
   return request(`/api/rooms/${roomId}/enter`, {
     method: "POST",
@@ -54,12 +59,16 @@ export function getRoomState(roomId: string, sessionToken: string): Promise<Room
   });
 }
 
-export function downloadFileUrl(roomId: string, fileId: string): string {
-  return `${API_BASE_URL}/api/rooms/${roomId}/files/${fileId}`;
+// Used for <a download> links and for <img>/<video> src attributes. The
+// session token travels as a query param in the latter case since HTML
+// media elements can't send custom headers — same short-lived token, same
+// scope as the Authorization header used everywhere else.
+export function downloadFileUrl(roomId: string, fileId: string, sessionToken: string): string {
+  return `${API_BASE_URL}/api/rooms/${roomId}/files/${fileId}?token=${encodeURIComponent(sessionToken)}`;
 }
 
-export function downloadAllUrl(roomId: string): string {
-  return `${API_BASE_URL}/api/rooms/${roomId}/download-all`;
+export function downloadAllUrl(roomId: string, sessionToken: string): string {
+  return `${API_BASE_URL}/api/rooms/${roomId}/download-all?token=${encodeURIComponent(sessionToken)}`;
 }
 
 export function openRoomEventStream(roomId: string, sessionToken: string): EventSource {

@@ -13,3 +13,4 @@ coverage/
 *.sqlite
 *.sqlite3
 .dev.vars
+*.tsbuildinfo

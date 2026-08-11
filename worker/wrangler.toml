@@ -3,12 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-# ─────────────────────────────────────────────────────────────────────────
-# IMPORTANT — DO NOT DEPLOY until this file is filled in against the
-# CORRECT Cloudflare account (see README.md). account_id is intentionally
-# left unset so `wrangler` will not silently deploy to the wrong account.
-# ─────────────────────────────────────────────────────────────────────────
-# account_id = "REPLACE_WITH_INTENDED_ACCOUNT_ID"
+account_id = "393fdc11838d18b9d1793acd906cdffe"
 
 [vars]
 MAX_FILE_SIZE = "5368709120"
@@ -21,9 +16,7 @@ DOWNLOAD_ALL_ZIP_MAX_BYTES = "2147483648"
 [[d1_databases]]
 binding = "DB"
 database_name = "sharizz-db"
-# database_id must be retrieved from the intended Cloudflare account via:
-#   npx wrangler d1 info sharizz-db
-database_id = "REPLACE_WITH_REAL_D1_DATABASE_ID"
+database_id = "937d592d-fd42-4ef4-aed7-0ff5ef7d73ea"
 migrations_dir = "migrations"
 
 [[r2_buckets]]

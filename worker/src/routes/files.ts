@@ -137,20 +137,59 @@ files.get("/:id/files/:fileId", async (c) => {
   const file = await getFileById(c.env, fileId, roomId);
   if (!file) return apiError(c, "FILE_NOT_FOUND", "File not found.");
 
-  const object = await c.env.MEDIA_BUCKET.get(file.storage_key);
+  // Range support lets <video>/<img> tags preview large originals (seeking,
+  // partial loads) without ever transcoding or resaving the file.
+  const rangeHeader = c.req.header("Range");
+  const range = parseRange(rangeHeader, file.file_size);
+
+  const object = await c.env.MEDIA_BUCKET.get(file.storage_key, range ? { range } : undefined);
   if (!object) return apiError(c, "FILE_NOT_FOUND", "File not found.");
 
   const headers = new Headers();
   headers.set("Content-Type", file.mime_type);
-  headers.set("Content-Length", String(file.file_size));
+  headers.set("Accept-Ranges", "bytes");
   headers.set(
     "Content-Disposition",
     `attachment; filename="${file.original_name.replace(/"/g, "")}"; filename*=UTF-8''${encodeURIComponent(file.original_name)}`
   );
   headers.set("Cache-Control", "private, no-store");
 
+  if (range) {
+    const end = Math.min(range.offset + range.length - 1, file.file_size - 1);
+    headers.set("Content-Range", `bytes ${range.offset}-${end}/${file.file_size}`);
+    headers.set("Content-Length", String(end - range.offset + 1));
+    return new Response(object.body, { headers, status: 206 });
+  }
+
+  headers.set("Content-Length", String(file.file_size));
   return new Response(object.body, { headers });
 });
+
+function parseRange(header: string | undefined, fileSize: number): { offset: number; length: number } | null {
+  if (!header) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match) return null;
+
+  const [, startStr, endStr] = match;
+  if (startStr === "" && endStr === "") return null;
+
+  let start: number;
+  let end: number;
+  if (startStr === "") {
+    const suffixLength = Number(endStr);
+    start = Math.max(fileSize - suffixLength, 0);
+    end = fileSize - 1;
+  } else {
+    start = Number(startStr);
+    end = endStr === "" ? fileSize - 1 : Number(endStr);
+  }
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end || start >= fileSize) {
+    return null;
+  }
+
+  return { offset: start, length: Math.min(end, fileSize - 1) - start + 1 };
+}
 
 files.get("/:id/download-all", async (c) => {
   const roomId = c.req.param("id");

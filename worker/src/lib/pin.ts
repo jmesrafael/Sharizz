@@ -1,7 +1,8 @@
 // PIN hashing using PBKDF2-SHA256 via Web Crypto (available natively in
 // Workers). Never store the plaintext PIN — only this derived hash.
 
-const ITERATIONS = 210_000;
+// Workers' PBKDF2 implementation caps iterations at 100,000.
+const ITERATIONS = 100_000;
 const KEY_LENGTH_BITS = 256;
 
 function toBase64(bytes: ArrayBuffer): string {

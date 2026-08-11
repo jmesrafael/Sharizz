@@ -29,7 +29,7 @@ describe("expiration cleanup", () => {
   it("deletes expired rooms, their files, and the R2 objects", async () => {
     await insertExpiredRoomWithFile("cleanup-room-1", "rooms/cleanup-room-1/file-1.jpg", true);
 
-    const result = await runCleanup(env as any);
+    const result = await runCleanup(env);
     expect(result.roomsDeleted).toBeGreaterThanOrEqual(1);
 
     const room = await env.DB.prepare("SELECT * FROM rooms WHERE id = ?").bind("cleanup-room-1").first();
@@ -44,14 +44,14 @@ describe("expiration cleanup", () => {
 
   it("is idempotent — running twice does not error", async () => {
     await insertExpiredRoomWithFile("cleanup-room-2", "rooms/cleanup-room-2/file-1.jpg", true);
-    await runCleanup(env as any);
-    await expect(runCleanup(env as any)).resolves.not.toThrow();
+    await runCleanup(env);
+    await expect(runCleanup(env)).resolves.not.toThrow();
   });
 
   it("continues cleanup when the R2 object is already missing", async () => {
     await insertExpiredRoomWithFile("cleanup-room-3", "rooms/cleanup-room-3/missing.jpg", false);
 
-    await expect(runCleanup(env as any)).resolves.not.toThrow();
+    await expect(runCleanup(env)).resolves.not.toThrow();
 
     const room = await env.DB.prepare("SELECT * FROM rooms WHERE id = ?").bind("cleanup-room-3").first();
     expect(room).toBeNull();
@@ -67,7 +67,7 @@ describe("expiration cleanup", () => {
       .bind("active-room", "StillActive", pinHash, now, now + 60_000)
       .run();
 
-    await runCleanup(env as any);
+    await runCleanup(env);
 
     const room = await env.DB.prepare("SELECT * FROM rooms WHERE id = ?").bind("active-room").first();
     expect(room).not.toBeNull();
