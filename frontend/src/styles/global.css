@@ -110,11 +110,6 @@ input {
   text-transform: uppercase;
 }
 
-.brand-mark {
-  color: var(--accent);
-  font-weight: 700;
-}
-
 .headline {
   font-family: var(--font-display);
   font-size: 27px;

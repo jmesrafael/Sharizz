@@ -64,9 +64,7 @@ export default function Home() {
   return (
     <div className="page">
       <div className="container">
-        <span className="brand">
-          SHA<span className="brand-mark">RIZZ</span>
-        </span>
+        <span className="brand">SHARIZZ</span>
 
         <blockquote className="riddle">
           This thing all devours:

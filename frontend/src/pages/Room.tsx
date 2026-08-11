@@ -286,7 +286,7 @@ export default function Room() {
       <div className="page">
         <div className="container">
           <Link to="/" className="brand">
-            SHA<span className="brand-mark">RIZZ</span>
+            SHARIZZ
           </Link>
           <div className="card">
             <span className="headline" style={{ fontSize: 20 }}>
@@ -307,7 +307,7 @@ export default function Room() {
       <div className="page">
         <div className="container">
           <Link to="/" className="brand">
-            SHA<span className="brand-mark">RIZZ</span>
+            SHARIZZ
           </Link>
           <div className="card">
             <span className="headline" style={{ fontSize: 20 }}>
