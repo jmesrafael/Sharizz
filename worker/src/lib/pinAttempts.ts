@@ -13,6 +13,20 @@ export async function getAttemptCount(env: Env, roomId: string, clientKey: strin
   return row?.attempts ?? 0;
 }
 
+export interface AttemptRecord {
+  attempts: number;
+  lastAttemptAt: number;
+}
+
+export async function getAttemptRecord(env: Env, roomId: string, clientKey: string): Promise<AttemptRecord> {
+  const row = await env.DB.prepare(
+    "SELECT attempts, last_attempt_at FROM pin_attempts WHERE room_id = ? AND client_key = ?"
+  )
+    .bind(roomId, clientKey)
+    .first<{ attempts: number; last_attempt_at: number }>();
+  return { attempts: row?.attempts ?? 0, lastAttemptAt: row?.last_attempt_at ?? 0 };
+}
+
 export async function recordFailedAttempt(env: Env, roomId: string, clientKey: string): Promise<void> {
   const now = Date.now();
   await env.DB.prepare(

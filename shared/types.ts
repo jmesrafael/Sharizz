@@ -54,6 +54,11 @@ export interface ExtendRoomResponse {
 export interface ApiErrorBody {
   error: string;
   code: ApiErrorCode;
+  // Only present on TOO_MANY_ATTEMPTS / INVALID_CODE — the real remaining
+  // lockout window in ms (short) and the remaining tries before a lockout,
+  // independent of whatever wording the message itself uses.
+  retryAfterMs?: number;
+  attemptsRemaining?: number;
 }
 
 export type ApiErrorCode =
@@ -107,7 +112,12 @@ export const LIMITS = {
   MAX_FOLDER_NAME_LENGTH: 60,
   MIN_FOLDER_NAME_LENGTH: 1,
   MAX_FOLDERS_PER_ROOM: 100,
-  MAX_GATE_ATTEMPTS: 8,
+  MAX_GATE_ATTEMPTS: 3,
+  // The lockout message tells the user "try again in 1 hour" (a deterrent
+  // lie, same spirit as the time-code riddle itself), but the real gate
+  // only holds for this long — short enough that a genuine user just waits
+  // it out, long enough to blunt a brute-force loop.
+  GATE_LOCKOUT_MS: 60 * 1000,
   ROOM_LIFETIME_MS: 24 * 60 * 60 * 1000,
   // Session tokens outlive the room's initial expiry on purpose — the room
   // row's expires_at (checked fresh on every request) is the real gate, and

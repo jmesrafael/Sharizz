@@ -22,6 +22,11 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   INTERNAL_ERROR: 500,
 };
 
-export function apiError(c: Context, code: ApiErrorCode, message: string) {
-  return c.json({ error: message, code }, STATUS_BY_CODE[code] as never);
+export function apiError(
+  c: Context,
+  code: ApiErrorCode,
+  message: string,
+  extra?: { retryAfterMs?: number; attemptsRemaining?: number }
+) {
+  return c.json({ error: message, code, ...extra }, STATUS_BY_CODE[code] as never);
 }

@@ -25,7 +25,7 @@ import {
 import { createSessionToken } from "../lib/session";
 import { requireRoomSession } from "../lib/auth";
 import { apiError } from "../lib/errors";
-import { getAttemptCount, recordFailedAttempt, clearAttempts, getClientKey } from "../lib/pinAttempts";
+import { getAttemptRecord, recordFailedAttempt, clearAttempts, getClientKey } from "../lib/pinAttempts";
 
 export const rooms = new Hono<{ Bindings: Env }>();
 
@@ -34,13 +34,30 @@ export const rooms = new Hono<{ Bindings: Env }>();
 // reuse the existing attempt-tracking table before any room exists yet.
 const GATE_KEY = "__gate__";
 
+// The lockout message deliberately overstates the wait ("1 hour") as a
+// deterrent, while the real window (config.GATE_LOCKOUT_MS, ~1 minute) is
+// short enough that a genuine user can just wait it out. retryAfterMs in
+// the response body carries the real remaining time so the frontend can
+// disable the form for exactly that long without repeating the lie.
+const LOCKOUT_MESSAGE = "Too many incorrect attempts. Try again in 1 hour.";
+
 rooms.post("/", async (c) => {
   const config = getConfig(c.env);
   const clientKey = getClientKey(c.req.raw);
 
-  const attempts = await getAttemptCount(c.env, GATE_KEY, clientKey);
+  const record = await getAttemptRecord(c.env, GATE_KEY, clientKey);
+  let attempts = record.attempts;
+
   if (attempts >= config.MAX_GATE_ATTEMPTS) {
-    return apiError(c, "TOO_MANY_ATTEMPTS", "Too many incorrect attempts. Try again later.");
+    const elapsed = Date.now() - record.lastAttemptAt;
+    if (elapsed < config.GATE_LOCKOUT_MS) {
+      return apiError(c, "TOO_MANY_ATTEMPTS", LOCKOUT_MESSAGE, {
+        retryAfterMs: config.GATE_LOCKOUT_MS - elapsed,
+      });
+    }
+    // Real lockout window has passed — wipe the slate for a fresh set of tries.
+    await clearAttempts(c.env, GATE_KEY, clientKey);
+    attempts = 0;
   }
 
   let body: Partial<CreateRoomRequest>;
@@ -53,7 +70,11 @@ rooms.post("/", async (c) => {
   const code = (body.code ?? "").toString().trim();
   if (!isValidTimeCode(code)) {
     await recordFailedAttempt(c.env, GATE_KEY, clientKey);
-    return apiError(c, "INVALID_CODE", "Incorrect code.");
+    const remaining = config.MAX_GATE_ATTEMPTS - (attempts + 1);
+    if (remaining <= 0) {
+      return apiError(c, "TOO_MANY_ATTEMPTS", LOCKOUT_MESSAGE, { retryAfterMs: config.GATE_LOCKOUT_MS });
+    }
+    return apiError(c, "INVALID_CODE", "Incorrect code.", { attemptsRemaining: remaining });
   }
   await clearAttempts(c.env, GATE_KEY, clientKey);
 

@@ -6,6 +6,7 @@ export interface Env {
   MAX_FILES_PER_ROOM: string;
   MAX_ROOM_STORAGE: string;
   MAX_GATE_ATTEMPTS: string;
+  GATE_LOCKOUT_MS?: string;
   DOWNLOAD_ALL_ZIP_MAX_BYTES: string;
 }
 

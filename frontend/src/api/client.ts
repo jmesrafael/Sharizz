@@ -16,10 +16,14 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787
 export class ApiError extends Error {
   code: string;
   status: number;
+  retryAfterMs?: number;
+  attemptsRemaining?: number;
   constructor(body: ApiErrorBody, status: number) {
     super(body.error);
     this.code = body.code;
     this.status = status;
+    this.retryAfterMs = body.retryAfterMs;
+    this.attemptsRemaining = body.attemptsRemaining;
   }
 }
 
