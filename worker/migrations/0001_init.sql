@@ -1,6 +1,6 @@
 -- Sharizz initial schema
 -- Rooms are temporary; all rows are expected to be purged by cron cleanup
--- within 7 days + a grace period. Nothing here is meant to be permanent.
+-- within 24 hours + a grace period. Nothing here is meant to be permanent.
 
 CREATE TABLE IF NOT EXISTS rooms (
   id TEXT PRIMARY KEY,

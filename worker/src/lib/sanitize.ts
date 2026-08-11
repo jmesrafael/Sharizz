@@ -1,17 +1,5 @@
 import { LIMITS } from "../../../shared/types";
 
-const ROOM_NAME_PATTERN = /^[A-Za-z0-9 _-]+$/;
-
-export function validateRoomName(name: string, maxLength: number): string | null {
-  const trimmed = name.trim();
-  if (trimmed.length < LIMITS.MIN_ROOM_NAME_LENGTH) return "Room name is too short.";
-  if (trimmed.length > maxLength) return `Room name must be ${maxLength} characters or fewer.`;
-  if (!ROOM_NAME_PATTERN.test(trimmed)) {
-    return "Room name may only contain letters, numbers, spaces, hyphens, and underscores.";
-  }
-  return null;
-}
-
 const FOLDER_NAME_PATTERN = /^[^\\/\x00-\x1f]+$/;
 
 export function validateFolderName(name: string): string | null {
@@ -22,14 +10,6 @@ export function validateFolderName(name: string): string | null {
   }
   if (!FOLDER_NAME_PATTERN.test(trimmed)) {
     return "Folder name can't contain slashes or control characters.";
-  }
-  return null;
-}
-
-export function validatePin(pin: string): string | null {
-  if (!/^\d+$/.test(pin)) return "PIN must contain only digits.";
-  if (pin.length < LIMITS.PIN_MIN_LENGTH || pin.length > LIMITS.PIN_MAX_LENGTH) {
-    return `PIN must be between ${LIMITS.PIN_MIN_LENGTH} and ${LIMITS.PIN_MAX_LENGTH} digits.`;
   }
   return null;
 }

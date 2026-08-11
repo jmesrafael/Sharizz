@@ -33,20 +33,10 @@ export interface CreateFolderRequest {
 }
 
 export interface CreateRoomRequest {
-  roomName: string;
-  pin: string;
+  code: string;
 }
 
 export interface CreateRoomResponse {
-  room: RoomPublic;
-  sessionToken: string;
-}
-
-export interface EnterRoomRequest {
-  pin: string;
-}
-
-export interface EnterRoomResponse {
   room: RoomPublic;
   sessionToken: string;
 }
@@ -65,11 +55,9 @@ export interface ApiErrorBody {
 export type ApiErrorCode =
   | "ROOM_NOT_FOUND"
   | "ROOM_EXPIRED"
-  | "INVALID_PIN"
+  | "INVALID_CODE"
   | "TOO_MANY_ATTEMPTS"
   | "UNAUTHORIZED"
-  | "INVALID_ROOM_NAME"
-  | "INVALID_PIN_FORMAT"
   | "FILE_TOO_LARGE"
   | "TOO_MANY_FILES"
   | "ROOM_STORAGE_LIMIT"
@@ -112,15 +100,11 @@ export const LIMITS = {
   MAX_FILE_SIZE: 5 * 1024 * 1024 * 1024, // 5 GB per file
   MAX_FILES_PER_ROOM: 500,
   MAX_ROOM_STORAGE: 20 * 1024 * 1024 * 1024, // 20 GB per room
-  MAX_ROOM_NAME_LENGTH: 40,
-  MIN_ROOM_NAME_LENGTH: 2,
   MAX_FOLDER_NAME_LENGTH: 60,
   MIN_FOLDER_NAME_LENGTH: 1,
   MAX_FOLDERS_PER_ROOM: 100,
-  MAX_PIN_ATTEMPTS: 8,
-  PIN_MIN_LENGTH: 4,
-  PIN_MAX_LENGTH: 8,
-  ROOM_LIFETIME_MS: 7 * 24 * 60 * 60 * 1000,
+  MAX_GATE_ATTEMPTS: 8,
+  ROOM_LIFETIME_MS: 24 * 60 * 60 * 1000,
   DOWNLOAD_ALL_ZIP_MAX_BYTES: 2 * 1024 * 1024 * 1024, // 2 GB — beyond this, use individual downloads
 } as const;
 

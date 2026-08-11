@@ -1,18 +1,12 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
-import type {
-  CreateFolderRequest,
-  CreateRoomRequest,
-  CreateRoomResponse,
-  EnterRoomRequest,
-  EnterRoomResponse,
-  RoomStateResponse,
-} from "../../../shared/types";
+import type { CreateFolderRequest, CreateRoomRequest, CreateRoomResponse, RoomStateResponse } from "../../../shared/types";
 import { LIMITS } from "../../../shared/types";
 import { getConfig } from "../lib/config";
-import { hashPin, verifyPin } from "../lib/pin";
+import { hashPin } from "../lib/pin";
 import { generateFolderId, generateRoomId } from "../lib/ids";
-import { validateFolderName, validatePin, validateRoomName } from "../lib/sanitize";
+import { validateFolderName } from "../lib/sanitize";
+import { isValidTimeCode, friendlyRoomName } from "../lib/timeGate";
 import { getRoomById, insertRoom, isRoomLive, toPublicRoom } from "../lib/roomsRepo";
 import { listFilesForRoom, toPublicFile } from "../lib/filesRepo";
 import {
@@ -29,26 +23,20 @@ import { getAttemptCount, recordFailedAttempt, clearAttempts, getClientKey } fro
 
 export const rooms = new Hono<{ Bindings: Env }>();
 
-// Resolves a human-friendly room name to its most recently created active
-// room ID. Names are not unique and are never treated as a credential —
-// the PIN is still required on /enter. Returns only the ID, nothing else.
-rooms.get("/lookup", async (c) => {
-  const name = c.req.query("name")?.trim();
-  if (!name) return apiError(c, "VALIDATION_ERROR", "Missing room name.");
-
-  const now = Date.now();
-  const row = await c.env.DB.prepare(
-    "SELECT id FROM rooms WHERE room_name = ? AND status = 'active' AND expires_at > ? ORDER BY created_at DESC LIMIT 1"
-  )
-    .bind(name, now)
-    .first<{ id: string }>();
-
-  if (!row) return apiError(c, "ROOM_NOT_FOUND", "Room not found.");
-  return c.json({ id: row.id }, 200);
-});
+// There's no account system — the "gate" is a per-IP rate-limited riddle
+// (see frontend Home page) instead of a login. This sentinel key lets us
+// reuse the existing attempt-tracking table before any room exists yet.
+const GATE_KEY = "__gate__";
 
 rooms.post("/", async (c) => {
   const config = getConfig(c.env);
+  const clientKey = getClientKey(c.req.raw);
+
+  const attempts = await getAttemptCount(c.env, GATE_KEY, clientKey);
+  if (attempts >= config.MAX_GATE_ATTEMPTS) {
+    return apiError(c, "TOO_MANY_ATTEMPTS", "Too many incorrect attempts. Try again later.");
+  }
+
   let body: Partial<CreateRoomRequest>;
   try {
     body = await c.req.json();
@@ -56,62 +44,37 @@ rooms.post("/", async (c) => {
     return apiError(c, "VALIDATION_ERROR", "Invalid request body.");
   }
 
-  const roomName = (body.roomName ?? "").toString().trim();
-  const pin = (body.pin ?? "").toString();
-
-  const nameError = validateRoomName(roomName, config.MAX_ROOM_NAME_LENGTH);
-  if (nameError) return apiError(c, "INVALID_ROOM_NAME", nameError);
-
-  const pinError = validatePin(pin);
-  if (pinError) return apiError(c, "INVALID_PIN_FORMAT", pinError);
+  const code = (body.code ?? "").toString().trim();
+  if (!isValidTimeCode(code)) {
+    await recordFailedAttempt(c.env, GATE_KEY, clientKey);
+    return apiError(c, "INVALID_CODE", "Incorrect code.");
+  }
+  await clearAttempts(c.env, GATE_KEY, clientKey);
 
   const now = Date.now();
   const expiresAt = now + LIMITS.ROOM_LIFETIME_MS;
   const id = generateRoomId();
-  const pinHash = await hashPin(pin);
+  const roomName = friendlyRoomName(new Date(now));
+  // The code itself is no longer a credential once the room exists (guest
+  // links carry their own signed session token) — hashed only to satisfy
+  // the schema's NOT NULL column.
+  const pinHash = await hashPin(code);
 
   await insertRoom(c.env, { id, roomName, pinHash, createdAt: now, expiresAt });
 
-  const room = { id, room_name: roomName, pin_hash: pinHash, created_at: now, expires_at: expiresAt, status: "active" as const, storage_bytes_used: 0 };
+  const room = {
+    id,
+    room_name: roomName,
+    pin_hash: pinHash,
+    created_at: now,
+    expires_at: expiresAt,
+    status: "active" as const,
+    storage_bytes_used: 0,
+  };
   const sessionToken = await createSessionToken(c.env.SESSION_SECRET, id, expiresAt);
 
   const response: CreateRoomResponse = { room: toPublicRoom(room, now), sessionToken };
   return c.json(response, 201);
-});
-
-rooms.post("/:id/enter", async (c) => {
-  const roomId = c.req.param("id");
-  const room = await getRoomById(c.env, roomId);
-  const now = Date.now();
-
-  if (!room) return apiError(c, "ROOM_NOT_FOUND", "Room not found.");
-  if (!isRoomLive(room, now)) return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
-
-  const config = getConfig(c.env);
-  const clientKey = getClientKey(c.req.raw);
-  const attempts = await getAttemptCount(c.env, roomId, clientKey);
-  if (attempts >= config.MAX_PIN_ATTEMPTS) {
-    return apiError(c, "TOO_MANY_ATTEMPTS", "Too many incorrect attempts. Try again later.");
-  }
-
-  let body: Partial<EnterRoomRequest>;
-  try {
-    body = await c.req.json();
-  } catch {
-    return apiError(c, "VALIDATION_ERROR", "Invalid request body.");
-  }
-  const pin = (body.pin ?? "").toString();
-
-  const ok = await verifyPin(pin, room.pin_hash);
-  if (!ok) {
-    await recordFailedAttempt(c.env, roomId, clientKey);
-    return apiError(c, "INVALID_PIN", "Incorrect PIN.");
-  }
-
-  await clearAttempts(c.env, roomId, clientKey);
-  const sessionToken = await createSessionToken(c.env.SESSION_SECRET, roomId, room.expires_at);
-  const response: EnterRoomResponse = { room: toPublicRoom(room, now), sessionToken };
-  return c.json(response, 200);
 });
 
 rooms.get("/:id", async (c) => {

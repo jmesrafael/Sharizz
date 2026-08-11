@@ -1,11 +1,12 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { app } from "../src/index";
+import { currentTimeCode } from "../src/lib/timeGate";
 
-async function createAndEnterRoom(roomName: string, pin: string) {
+async function createRoom() {
   const created = await app.request(
     "/api/rooms",
-    { method: "POST", body: JSON.stringify({ roomName, pin }), headers: { "Content-Type": "application/json" } },
+    { method: "POST", body: JSON.stringify({ code: currentTimeCode() }), headers: { "Content-Type": "application/json" } },
     env
   );
   return created.json<any>();
@@ -29,7 +30,7 @@ async function uploadFile(roomId: string, sessionToken: string, name: string, by
 
 describe("file upload authorization", () => {
   it("accepts an upload with a valid session token", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("UploadRoom1", "1234");
+    const { room, sessionToken } = await createRoom();
     const bytes = new TextEncoder().encode("fake-jpeg-bytes");
 
     const res = await uploadFile(room.id, sessionToken, "IMG_001.JPG", bytes);
@@ -40,7 +41,7 @@ describe("file upload authorization", () => {
   });
 
   it("rejects an upload without a session token", async () => {
-    const { room } = await createAndEnterRoom("UploadRoom2", "1234");
+    const { room } = await createRoom();
     const bytes = new TextEncoder().encode("fake-jpeg-bytes");
 
     const res = await app.request(
@@ -52,7 +53,7 @@ describe("file upload authorization", () => {
   });
 
   it("rejects an unsupported file type", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("UploadRoom3", "1234");
+    const { room, sessionToken } = await createRoom();
     const bytes = new TextEncoder().encode("not-an-allowed-type");
 
     const res = await uploadFile(room.id, sessionToken, "script.exe", bytes, "application/x-msdownload");
@@ -60,7 +61,7 @@ describe("file upload authorization", () => {
   });
 
   it("saves file metadata in D1", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("UploadRoom4", "1234");
+    const { room, sessionToken } = await createRoom();
     const bytes = new TextEncoder().encode("fake-heic-bytes");
 
     await uploadFile(room.id, sessionToken, "IMG_004.HEIC", bytes, "image/heic");
@@ -74,7 +75,7 @@ describe("file upload authorization", () => {
 
 describe("file download authorization", () => {
   it("downloads the original file with a valid session", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("DownloadRoom1", "1234");
+    const { room, sessionToken } = await createRoom();
     const bytes = new TextEncoder().encode("original-quality-bytes");
     const uploadRes = await uploadFile(room.id, sessionToken, "IMG_005.PNG", bytes, "image/png");
     const { id: fileId } = await uploadRes.json<any>();
@@ -91,7 +92,7 @@ describe("file download authorization", () => {
   });
 
   it("rejects a download without a session token", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("DownloadRoom2", "1234");
+    const { room, sessionToken } = await createRoom();
     const bytes = new TextEncoder().encode("original-quality-bytes");
     const uploadRes = await uploadFile(room.id, sessionToken, "IMG_006.PNG", bytes, "image/png");
     const { id: fileId } = await uploadRes.json<any>();
@@ -101,7 +102,7 @@ describe("file download authorization", () => {
   });
 
   it("returns not found for a file id that does not belong to the room", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("DownloadRoom3", "1234");
+    const { room, sessionToken } = await createRoom();
     const res = await app.request(
       `/api/rooms/${room.id}/files/nonexistent-file`,
       { headers: { Authorization: `Bearer ${sessionToken}` } },

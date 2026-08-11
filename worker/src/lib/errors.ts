@@ -4,11 +4,9 @@ import type { ApiErrorCode } from "../../../shared/types";
 const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   ROOM_NOT_FOUND: 404,
   ROOM_EXPIRED: 410,
-  INVALID_PIN: 401,
+  INVALID_CODE: 401,
   TOO_MANY_ATTEMPTS: 429,
   UNAUTHORIZED: 401,
-  INVALID_ROOM_NAME: 400,
-  INVALID_PIN_FORMAT: 400,
   FILE_TOO_LARGE: 413,
   TOO_MANY_FILES: 400,
   ROOM_STORAGE_LIMIT: 400,

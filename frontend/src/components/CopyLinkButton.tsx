@@ -1,8 +1,8 @@
 import { useState } from "react";
 
-export default function CopyLinkButton({ roomId }: { roomId: string }) {
+export default function CopyLinkButton({ roomId, sessionToken }: { roomId: string; sessionToken: string }) {
   const [copied, setCopied] = useState(false);
-  const link = `${window.location.origin}/room/${roomId}`;
+  const link = `${window.location.origin}/room/${roomId}?token=${encodeURIComponent(sessionToken)}`;
 
   async function handleCopy() {
     try {

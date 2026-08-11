@@ -1,11 +1,12 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { app } from "../src/index";
+import { currentTimeCode } from "../src/lib/timeGate";
 
-async function createAndEnterRoom(roomName: string, pin: string) {
+async function createRoom() {
   const created = await app.request(
     "/api/rooms",
-    { method: "POST", body: JSON.stringify({ roomName, pin }), headers: { "Content-Type": "application/json" } },
+    { method: "POST", body: JSON.stringify({ code: currentTimeCode() }), headers: { "Content-Type": "application/json" } },
     env
   );
   return created.json<any>();
@@ -32,7 +33,7 @@ async function uploadFile(
 
 describe("folder creation", () => {
   it("creates a folder in a room", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("FolderRoom1", "1234");
+    const { room, sessionToken } = await createRoom();
     const res = await app.request(
       `/api/rooms/${room.id}/folders`,
       {
@@ -49,7 +50,7 @@ describe("folder creation", () => {
   });
 
   it("rejects folder creation without a session", async () => {
-    const { room } = await createAndEnterRoom("FolderRoom2", "1234");
+    const { room } = await createRoom();
     const res = await app.request(
       `/api/rooms/${room.id}/folders`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folderName: "Nope" }) },
@@ -59,7 +60,7 @@ describe("folder creation", () => {
   });
 
   it("rejects an empty folder name", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("FolderRoom3", "1234");
+    const { room, sessionToken } = await createRoom();
     const res = await app.request(
       `/api/rooms/${room.id}/folders`,
       {
@@ -73,7 +74,7 @@ describe("folder creation", () => {
   });
 
   it("nests a folder inside a parent folder", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("FolderRoom4", "1234");
+    const { room, sessionToken } = await createRoom();
     const parentRes = await app.request(
       `/api/rooms/${room.id}/folders`,
       {
@@ -100,7 +101,7 @@ describe("folder creation", () => {
   });
 
   it("uploads a file into a folder and reflects it in room state", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("FolderRoom5", "1234");
+    const { room, sessionToken } = await createRoom();
     const folderRes = await app.request(
       `/api/rooms/${room.id}/folders`,
       {
@@ -127,7 +128,7 @@ describe("folder creation", () => {
 
 describe("multi-select download", () => {
   it("downloads a zip containing only the selected files", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("SelectRoom1", "1234");
+    const { room, sessionToken } = await createRoom();
     const a = await (await uploadFile(room.id, sessionToken, "A.JPG", new TextEncoder().encode("aaa"))).json<any>();
     const b = await (await uploadFile(room.id, sessionToken, "B.JPG", new TextEncoder().encode("bbb"))).json<any>();
     await uploadFile(room.id, sessionToken, "C.JPG", new TextEncoder().encode("ccc"));
@@ -144,7 +145,7 @@ describe("multi-select download", () => {
   });
 
   it("rejects download-selected with no file ids", async () => {
-    const { room, sessionToken } = await createAndEnterRoom("SelectRoom2", "1234");
+    const { room, sessionToken } = await createRoom();
     const res = await app.request(
       `/api/rooms/${room.id}/download-selected`,
       { headers: { Authorization: `Bearer ${sessionToken}` } },
@@ -154,7 +155,7 @@ describe("multi-select download", () => {
   });
 
   it("rejects download-selected without a session", async () => {
-    const { room } = await createAndEnterRoom("SelectRoom3", "1234");
+    const { room } = await createRoom();
     const res = await app.request(`/api/rooms/${room.id}/download-selected?fileIds=x,y`, {}, env);
     expect(res.status).toBe(401);
   });

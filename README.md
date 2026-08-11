@@ -1,6 +1,6 @@
 # Sharizz
 
-Temporary, original-quality photo and video transfer rooms. Upload the original file, share a room link + PIN, and let others download the exact bytes you uploaded. Rooms and all files are permanently deleted 7 days after creation.
+Temporary, original-quality photo and video transfer rooms. The landing page is a riddle gate — only whoever knows the trick (type the current clock time) can create a room. Once created, the owner shares a link that carries its own access token, so recipients just open it and go — no code, no PIN. Rooms and all files are permanently deleted 24 hours after creation.
 
 Sharizz is intentionally **not** a cloud storage product — no accounts, no permanence, no compression, no transcoding. It's AirDrop, through a temporary web room.
 
@@ -16,8 +16,8 @@ React (Vite/TS) ──HTTPS──▶ Cloudflare Worker (Hono) ──▶ D1 (shar
 
 - **Uploads** stream directly from the browser into the Worker's R2 binding (`bucket.put(key, request.body, …)`) — the Worker never buffers a full file in memory, so multi-hundred-MB videos are fine.
 - **Downloads** stream straight from R2 through the Worker, with Range support so `<video>` previews can seek without downloading the whole file first.
-- **PINs** are hashed with PBKDF2-SHA256 (210k iterations) via Web Crypto — the plaintext PIN is never stored, never logged.
-- **Sessions** are stateless HMAC-signed tokens (`SESSION_SECRET`), scoped to a room and its expiry. Stored in `sessionStorage` on the client — never `localStorage`, never the PIN.
+- **The gate** accepts a 4-digit code only if it matches the current time (12-hour, zero-padded, ±2 minutes) in `Asia/Manila`. It's hashed with PBKDF2-SHA256 via Web Crypto before being stored, purely to satisfy the schema — it's not checked again after room creation.
+- **Sessions** are stateless HMAC-signed tokens (`SESSION_SECRET`), scoped to a room and its expiry. Stored in `sessionStorage` on the client. Guest links carry the token in the URL (`?token=...`) so a recipient never has to solve the gate themselves; the app picks it up once and scrubs it from the visible URL.
 - **Live updates** use Server-Sent Events: the Worker polls D1 every 3s inside an open stream and pushes a fresh file list only when it changes. No Durable Objects, no WebSocket infrastructure.
 - **Download All** streams a ZIP (store-only, no recompression) built on the fly from R2 objects via `client-zip`, capped by `DOWNLOAD_ALL_ZIP_MAX_BYTES` — past that, users download files individually.
 
@@ -63,7 +63,7 @@ npm run migrate:local
 npm run test:worker
 ```
 
-Covers: PIN hashing/verification, session token signing/expiry, room creation, correct/incorrect PIN handling, PIN attempt lockout, expired-room rejection, authorized/unauthorized room access, file upload authorization, file metadata persistence, unsupported file type rejection, authorized/unauthorized downloads, and cron cleanup (including idempotency and missing-R2-object handling).
+Covers: PIN hashing/verification, session token signing/expiry, room creation via the time-gate, wrong-code rejection, gate attempt lockout, expired-room rejection, authorized/unauthorized room access (header and query-token), file upload authorization, file metadata persistence, unsupported file type rejection, authorized/unauthorized downloads, and cron cleanup (including idempotency and missing-R2-object handling).
 
 ## Deployment — READ BEFORE RUNNING
 
@@ -109,15 +109,14 @@ Set as Worker vars in `wrangler.toml` (`[vars]`), not hardcoded through the code
 | `MAX_FILE_SIZE` | 5 GB | Per-file upload limit |
 | `MAX_FILES_PER_ROOM` | 500 | File count limit per room |
 | `MAX_ROOM_STORAGE` | 20 GB | Total storage per room |
-| `MAX_ROOM_NAME_LENGTH` | 40 | Room name length limit |
-| `MAX_PIN_ATTEMPTS` | 8 | Failed PIN attempts before lockout (per room, per client IP) |
+| `MAX_GATE_ATTEMPTS` | 8 | Failed gate codes before lockout (per client IP) |
 | `DOWNLOAD_ALL_ZIP_MAX_BYTES` | 2 GB | Above this, "Download All" is disabled in favor of individual downloads |
 
 ## Security notes
 
-- Room IDs are 128-bit random, URL-safe, and double as an unguessable secret alongside the PIN.
-- PINs are never stored in plaintext, never logged, never sent to the client after entry.
-- Every sensitive endpoint (room state, upload, download, events) re-validates room expiry and session authorization server-side — the frontend countdown is cosmetic only.
+- Room IDs are 128-bit random and URL-safe.
+- **The time-gate is obscurity, not authentication.** It has no account behind it — anyone who reads the bundle or watches network traffic can work out the rule. It's rate-limited per IP (`MAX_GATE_ATTEMPTS`) so it can't be brute-forced by script, but it should not be relied on to protect anything sensitive.
+- Once a room exists, real access control takes over: guest links carry a signed, room-scoped, time-limited session token — not the gate code — and every sensitive endpoint (room state, upload, download, events) re-validates room expiry and session authorization server-side.
 - Filenames are sanitized for display; storage keys always use generated IDs (`rooms/{roomId}/{fileId}{ext}`), never the original filename, eliminating path traversal risk.
 - The R2 bucket is never exposed directly — all access goes through the Worker's authorization checks.
 - No Cloudflare credentials, tokens, or secrets exist in frontend code, `wrangler.toml`, or anywhere committed to git.

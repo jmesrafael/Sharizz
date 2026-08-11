@@ -5,8 +5,7 @@ export interface Env {
   MAX_FILE_SIZE: string;
   MAX_FILES_PER_ROOM: string;
   MAX_ROOM_STORAGE: string;
-  MAX_ROOM_NAME_LENGTH: string;
-  MAX_PIN_ATTEMPTS: string;
+  MAX_GATE_ATTEMPTS: string;
   DOWNLOAD_ALL_ZIP_MAX_BYTES: string;
 }
 

@@ -1,7 +1,6 @@
 import type {
   ApiErrorBody,
   CreateRoomResponse,
-  EnterRoomResponse,
   FilePublic,
   FolderPublic,
   RoomStateResponse,
@@ -34,24 +33,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export function createRoom(roomName: string, pin: string): Promise<CreateRoomResponse> {
+export function createRoom(code: string): Promise<CreateRoomResponse> {
   return request("/api/rooms", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ roomName, pin }),
-  });
-}
-
-export async function lookupRoomByName(name: string): Promise<string> {
-  const { id } = await request<{ id: string }>(`/api/rooms/lookup?name=${encodeURIComponent(name)}`);
-  return id;
-}
-
-export function enterRoom(roomId: string, pin: string): Promise<EnterRoomResponse> {
-  return request(`/api/rooms/${roomId}/enter`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pin }),
+    body: JSON.stringify({ code }),
   });
 }
 

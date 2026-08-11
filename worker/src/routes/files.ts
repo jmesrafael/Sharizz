@@ -323,7 +323,7 @@ files.delete("/:id/files", async (c) => {
 // Clear storage: wipes every file and folder in the room, freeing the full
 // quota. Distinct from letting the room expire — this is an explicit,
 // irreversible action the room owner takes (e.g. right after downloading
-// everything) rather than waiting out the 7-day lifetime.
+// everything) rather than waiting out the room's lifetime.
 files.delete("/:id/clear", async (c) => {
   const roomId = c.req.param("id");
   const auth = await authorizeRoom(c, roomId);

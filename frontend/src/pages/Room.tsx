@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { FilePublic, FolderPublic, RoomPublic } from "@shared/types";
 import { LIMITS } from "@shared/types";
 import {
@@ -9,7 +9,6 @@ import {
   deleteFiles,
   downloadAllUrl,
   downloadSelectedUrl,
-  enterRoom,
   getRoomState,
 } from "../api/client";
 import { getSessionToken, saveSessionToken } from "../api/roomSession";
@@ -22,20 +21,23 @@ import UploadProgressList from "../components/UploadProgressList";
 import { useUploads } from "../hooks/useUploads";
 import { useRoomEvents } from "../hooks/useRoomEvents";
 
+const GRID_SIZES = { small: 120, medium: 180, large: 260 } as const;
+
 type LoadState =
   | { kind: "loading" }
-  | { kind: "needs-pin" }
+  | { kind: "no-access" }
   | { kind: "ready"; room: RoomPublic; sessionToken: string }
   | { kind: "expired" }
   | { kind: "error"; message: string };
 
 export default function Room() {
   const { roomId = "" } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [files, setFiles] = useState<FilePublic[]>([]);
   const [folders, setFolders] = useState<FolderPublic[]>([]);
   const [previewFile, setPreviewFile] = useState<FilePublic | null>(null);
-  const [tileSize, setTileSize] = useState(140);
+  const [gridSize, setGridSize] = useState<"small" | "medium" | "large">("medium");
   const [folderStack, setFolderStack] = useState<FolderPublic[]>([]);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -52,9 +54,22 @@ export default function Room() {
   const currentFolderId = folderStack.length > 0 ? folderStack[folderStack.length - 1].id : null;
 
   const load = useCallback(async () => {
-    const token = getSessionToken(roomId);
+    // A shared link carries its own access token in the query string, so a
+    // recipient never has to solve the gate themselves — pick it up once,
+    // stash it in sessionStorage, and scrub it from the visible URL.
+    const urlToken = searchParams.get("token");
+    if (urlToken) {
+      saveSessionToken(roomId, urlToken);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("token");
+        return next;
+      }, { replace: true });
+    }
+
+    const token = urlToken ?? getSessionToken(roomId);
     if (!token) {
-      setState({ kind: "needs-pin" });
+      setState({ kind: "no-access" });
       return;
     }
     try {
@@ -64,14 +79,14 @@ export default function Room() {
       setFolders(data.folders);
     } catch (err) {
       if (err instanceof ApiError && (err.code === "UNAUTHORIZED" || err.code === "ROOM_NOT_FOUND")) {
-        setState({ kind: "needs-pin" });
+        setState({ kind: "no-access" });
       } else if (err instanceof ApiError && err.code === "ROOM_EXPIRED") {
         setState({ kind: "expired" });
       } else {
         setState({ kind: "error", message: err instanceof ApiError ? err.message : "Something went wrong." });
       }
     }
-  }, [roomId]);
+  }, [roomId, searchParams, setSearchParams]);
 
   useEffect(() => {
     load();
@@ -226,8 +241,25 @@ export default function Room() {
     );
   }
 
-  if (state.kind === "needs-pin") {
-    return <PinGate roomId={roomId} onEntered={load} />;
+  if (state.kind === "no-access") {
+    return (
+      <div className="page">
+        <div className="container">
+          <Link to="/" className="brand">
+            SHA<span className="brand-mark">RIZZ</span>
+          </Link>
+          <div className="card">
+            <span className="headline" style={{ fontSize: 20 }}>
+              This link is invalid or has expired.
+            </span>
+            <p className="subtext">Ask whoever shared this storage for a fresh link.</p>
+            <Link to="/" className="btn btn-primary btn-block">
+              Back to Sharizz
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (state.kind === "expired") {
@@ -286,7 +318,7 @@ export default function Room() {
         </div>
 
         <div className="share-row">
-          <CopyLinkButton roomId={room.id} />
+          <CopyLinkButton roomId={room.id} sessionToken={sessionToken} />
         </div>
 
         <div className="breadcrumb">
@@ -358,17 +390,17 @@ export default function Room() {
             <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Files</h2>
             <div className="toolbar-row" style={{ alignItems: "center" }}>
               {visibleFiles.length > 0 && (
-                <div className="grid-controls">
-                  <label htmlFor="gridSize">Size</label>
-                  <input
-                    id="gridSize"
-                    type="range"
-                    min={90}
-                    max={260}
-                    step={10}
-                    value={tileSize}
-                    onChange={(e) => setTileSize(Number(e.target.value))}
-                  />
+                <div className="grid-controls" role="group" aria-label="Grid size">
+                  {(Object.keys(GRID_SIZES) as Array<keyof typeof GRID_SIZES>).map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      className={`grid-size-btn${gridSize === size ? " active" : ""}`}
+                      onClick={() => setGridSize(size)}
+                    >
+                      {size === "small" ? "S" : size === "medium" ? "M" : "L"}
+                    </button>
+                  ))}
                 </div>
               )}
               {files.length > 0 && !selectMode && (
@@ -382,7 +414,7 @@ export default function Room() {
           {!hasContent ? (
             <div className="empty-state">No files yet. Upload the first one above, or drag files in.</div>
           ) : (
-            <div className="file-list" style={{ ["--tile-size" as string]: `${tileSize}px` }}>
+            <div className="file-list" style={{ ["--tile-size" as string]: `${GRID_SIZES[gridSize]}px` }}>
               {visibleFolders.map((folder) => (
                 <FolderCard key={folder.id} folder={folder} onOpen={(f) => setFolderStack((prev) => [...prev, f])} />
               ))}
@@ -454,59 +486,6 @@ export default function Room() {
           onClose={() => setPreviewFile(null)}
         />
       )}
-    </div>
-  );
-}
-
-function PinGate({ roomId, onEntered }: { roomId: string; onEntered: () => void }) {
-  const [pin, setPin] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      const { room, sessionToken } = await enterRoom(roomId, pin);
-      saveSessionToken(room.id, sessionToken);
-      onEntered();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="page">
-      <div className="container">
-        <Link to="/" className="brand">
-          SHA<span className="brand-mark">RIZZ</span>
-        </Link>
-        <h1 className="headline">Enter Storage PIN</h1>
-        <form className="card" onSubmit={handleSubmit}>
-          <div className="field">
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder="••••"
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
-              minLength={4}
-              maxLength={8}
-              autoComplete="off"
-              autoFocus
-              required
-            />
-          </div>
-          {error && <div className="error-banner">{error}</div>}
-          <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-            {submitting ? "Entering…" : "Enter Storage"}
-          </button>
-        </form>
-      </div>
     </div>
   );
 }
