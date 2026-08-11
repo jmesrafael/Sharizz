@@ -1,13 +1,19 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
-import type { CreateFolderRequest, CreateRoomRequest, CreateRoomResponse, RoomStateResponse } from "../../../shared/types";
+import type {
+  CreateFolderRequest,
+  CreateRoomRequest,
+  CreateRoomResponse,
+  ExtendRoomResponse,
+  RoomStateResponse,
+} from "../../../shared/types";
 import { LIMITS } from "../../../shared/types";
 import { getConfig } from "../lib/config";
 import { hashPin } from "../lib/pin";
 import { generateFolderId, generateRoomId } from "../lib/ids";
 import { validateFolderName } from "../lib/sanitize";
 import { isValidTimeCode, friendlyRoomName } from "../lib/timeGate";
-import { getRoomById, insertRoom, isRoomLive, toPublicRoom } from "../lib/roomsRepo";
+import { extendRoomExpiry, getRoomById, insertRoom, isRoomLive, toPublicRoom } from "../lib/roomsRepo";
 import { listFilesForRoom, toPublicFile } from "../lib/filesRepo";
 import {
   countFoldersForRoom,
@@ -71,10 +77,30 @@ rooms.post("/", async (c) => {
     status: "active" as const,
     storage_bytes_used: 0,
   };
-  const sessionToken = await createSessionToken(c.env.SESSION_SECRET, id, expiresAt);
+  // Deliberately not tied to the room's expiry — see SESSION_TOKEN_LIFETIME_MS.
+  const sessionToken = await createSessionToken(c.env.SESSION_SECRET, id, now + LIMITS.SESSION_TOKEN_LIFETIME_MS);
 
   const response: CreateRoomResponse = { room: toPublicRoom(room, now), sessionToken };
   return c.json(response, 201);
+});
+
+// Hidden extension: clicking the corner countdown 5 times pushes the room's
+// deletion out by another ROOM_LIFETIME_MS. No UI hint that this exists —
+// see CountdownTimer.tsx on the frontend.
+rooms.post("/:id/extend", async (c) => {
+  const roomId = c.req.param("id");
+  const room = await getRoomById(c.env, roomId);
+  const now = Date.now();
+
+  if (!room) return apiError(c, "ROOM_NOT_FOUND", "Room not found.");
+  if (!isRoomLive(room, now)) return apiError(c, "ROOM_EXPIRED", "This storage room has expired.");
+
+  const authorized = await requireRoomSession(c, roomId);
+  if (!authorized) return apiError(c, "UNAUTHORIZED", "A valid room session is required.");
+
+  const expiresAt = await extendRoomExpiry(c.env, roomId, LIMITS.ROOM_LIFETIME_MS);
+  const response: ExtendRoomResponse = { expiresAt };
+  return c.json(response, 200);
 });
 
 rooms.get("/:id", async (c) => {

@@ -71,18 +71,6 @@ export default function Home() {
             {submitting ? "Checking…" : "Enter"}
           </button>
         </form>
-
-        <div className="feature-list">
-          <div className="item">
-            <span className="dot">●</span> Original files preserved, byte for byte
-          </div>
-          <div className="item">
-            <span className="dot">●</span> No compression, no quality reduction
-          </div>
-          <div className="item">
-            <span className="dot">●</span> Storage automatically expires after 24 hours
-          </div>
-        </div>
       </div>
     </div>
   );

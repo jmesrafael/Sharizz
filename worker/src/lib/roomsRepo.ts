@@ -41,3 +41,13 @@ export async function incrementRoomStorage(env: Env, roomId: string, deltaBytes:
 export async function setRoomStorage(env: Env, roomId: string, bytes: number): Promise<void> {
   await env.DB.prepare("UPDATE rooms SET storage_bytes_used = ? WHERE id = ?").bind(bytes, roomId).run();
 }
+
+export async function extendRoomExpiry(env: Env, roomId: string, additionalMs: number): Promise<number> {
+  await env.DB.prepare("UPDATE rooms SET expires_at = expires_at + ? WHERE id = ?")
+    .bind(additionalMs, roomId)
+    .run();
+  const row = await env.DB.prepare("SELECT expires_at FROM rooms WHERE id = ?")
+    .bind(roomId)
+    .first<{ expires_at: number }>();
+  return row?.expires_at ?? Date.now() + additionalMs;
+}

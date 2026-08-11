@@ -1,28 +1,69 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { extendRoom } from "../api/client";
 
-function formatRemaining(ms: number): { text: string; level: "normal" | "warning" | "urgent" } {
-  if (ms <= 0) return { text: "Expired", level: "urgent" };
+// Deliberately unlabeled — just a number in the corner. Only meaningful to
+// whoever already knows what it counts down from. Five clicks within
+// CLICK_RESET_MS of each other push the room's deletion out by another
+// full ROOM_LIFETIME_MS (24 hours), silently — no visible hint this exists.
+const CLICKS_TO_EXTEND = 5;
+const CLICK_RESET_MS = 2000;
 
-  const totalHours = Math.floor(ms / (1000 * 60 * 60));
-  const days = Math.floor(totalHours / 24);
-  const hours = totalHours % 24;
-  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-
-  if (days >= 2) return { text: `Expires in ${days} days ${hours} hours`, level: "normal" };
-  if (days === 1) return { text: `Expires in 1 day ${hours} hours`, level: "normal" };
-  if (totalHours >= 1) return { text: `Expires in ${totalHours} hours`, level: totalHours <= 6 ? "urgent" : "warning" };
-  return { text: `Expires in ${Math.max(minutes, 1)} minutes`, level: "urgent" };
-}
-
-export default function CountdownTimer({ expiresAt }: { expiresAt: number }) {
+export default function CountdownTimer({
+  roomId,
+  sessionToken,
+  expiresAt,
+  onExtended,
+}: {
+  roomId: string;
+  sessionToken: string;
+  expiresAt: number;
+  onExtended: (expiresAt: number) => void;
+}) {
   const [now, setNow] = useState(() => Date.now());
+  const [clicks, setClicks] = useState(0);
+  const extendingRef = useRef(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(interval);
   }, []);
 
-  const { text, level } = formatRemaining(expiresAt - now);
+  useEffect(
+    () => () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+    },
+    []
+  );
 
-  return <span className={`expiry-pill ${level !== "normal" ? level : ""}`}>{text}</span>;
+  async function handleClick() {
+    if (extendingRef.current) return;
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+
+    const next = clicks + 1;
+    if (next < CLICKS_TO_EXTEND) {
+      setClicks(next);
+      resetTimer.current = setTimeout(() => setClicks(0), CLICK_RESET_MS);
+      return;
+    }
+
+    setClicks(0);
+    extendingRef.current = true;
+    try {
+      const { expiresAt: newExpiresAt } = await extendRoom(roomId, sessionToken);
+      onExtended(newExpiresAt);
+    } catch {
+      // Silent on purpose — this control has no visible feedback surface.
+    } finally {
+      extendingRef.current = false;
+    }
+  }
+
+  const hoursLeft = Math.max(0, Math.ceil((expiresAt - now) / (1000 * 60 * 60)));
+
+  return (
+    <button type="button" className="hours-left" onClick={handleClick} aria-label="Time remaining">
+      {hoursLeft}
+    </button>
+  );
 }

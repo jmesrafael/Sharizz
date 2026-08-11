@@ -117,3 +117,67 @@ describe("room access authorization", () => {
     expect(res.status).toBe(410);
   });
 });
+
+describe("hidden lifetime extension", () => {
+  it("pushes expires_at out by ROOM_LIFETIME_MS", async () => {
+    const created = await createRoom(currentTimeCode(), "203.0.113.9");
+    const { room, sessionToken } = await created.json<any>();
+
+    const res = await app.request(
+      `/api/rooms/${room.id}/extend`,
+      { method: "POST", headers: { Authorization: `Bearer ${sessionToken}` } },
+      env
+    );
+    expect(res.status).toBe(200);
+    const { expiresAt } = await res.json<any>();
+    expect(expiresAt).toBeGreaterThan(room.expiresAt);
+    expect(expiresAt - room.expiresAt).toBeCloseTo(24 * 60 * 60 * 1000, -3);
+  });
+
+  it("rejects extension without a valid session", async () => {
+    const created = await createRoom(currentTimeCode(), "203.0.113.10");
+    const { room } = await created.json<any>();
+
+    const res = await app.request(`/api/rooms/${room.id}/extend`, { method: "POST" }, env);
+    expect(res.status).toBe(401);
+  });
+
+  it("still grants room access after the original expiry once extended", async () => {
+    const pinHash = await hashPin("0000");
+    const now = Date.now();
+    await env.DB.prepare(
+      `INSERT INTO rooms (id, room_name, pin_hash, created_at, expires_at, status, storage_bytes_used)
+       VALUES (?, ?, ?, ?, ?, 'active', 0)`
+    )
+      .bind("soon-expiring-room", "SoonRoom", pinHash, now, now + 50)
+      .run();
+
+    const { createSessionToken } = await import("../src/lib/session");
+    const { LIMITS } = await import("../../shared/types");
+    const sessionToken = await createSessionToken(
+      (env as any).SESSION_SECRET,
+      "soon-expiring-room",
+      now + LIMITS.SESSION_TOKEN_LIFETIME_MS
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const blockedRes = await app.request(
+      "/api/rooms/soon-expiring-room",
+      { headers: { Authorization: `Bearer ${sessionToken}` } },
+      env
+    );
+    expect(blockedRes.status).toBe(410);
+
+    await env.DB.prepare("UPDATE rooms SET expires_at = ? WHERE id = ?")
+      .bind(Date.now() + 24 * 60 * 60 * 1000, "soon-expiring-room")
+      .run();
+
+    const allowedRes = await app.request(
+      "/api/rooms/soon-expiring-room",
+      { headers: { Authorization: `Bearer ${sessionToken}` } },
+      env
+    );
+    expect(allowedRes.status).toBe(200);
+  });
+});

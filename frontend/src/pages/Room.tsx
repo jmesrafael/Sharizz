@@ -8,7 +8,7 @@ import {
   createFolder,
   deleteFiles,
   downloadAllUrl,
-  downloadSelectedUrl,
+  downloadFileToDisk,
   getRoomState,
 } from "../api/client";
 import { getSessionToken, saveSessionToken } from "../api/roomSession";
@@ -16,6 +16,7 @@ import CountdownTimer from "../components/CountdownTimer";
 import CopyLinkButton from "../components/CopyLinkButton";
 import FileCard from "../components/FileCard";
 import FolderCard from "../components/FolderCard";
+import NetworkSignal from "../components/NetworkSignal";
 import PreviewModal from "../components/PreviewModal";
 import UploadProgressList from "../components/UploadProgressList";
 import { useUploads } from "../hooks/useUploads";
@@ -36,7 +37,7 @@ export default function Room() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [files, setFiles] = useState<FilePublic[]>([]);
   const [folders, setFolders] = useState<FolderPublic[]>([]);
-  const [previewFile, setPreviewFile] = useState<FilePublic | null>(null);
+  const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [gridSize, setGridSize] = useState<"small" | "medium" | "large">("medium");
   const [folderStack, setFolderStack] = useState<FolderPublic[]>([]);
   const [selectMode, setSelectMode] = useState(false);
@@ -47,6 +48,8 @@ export default function Room() {
   const [dragActive, setDragActive] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [downloadingSelected, setDownloadingSelected] = useState(false);
+  const [downloadStatuses, setDownloadStatuses] = useState<Map<string, "downloading" | "done">>(new Map());
   const [actionError, setActionError] = useState<string | null>(null);
   const dragCounter = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -94,6 +97,10 @@ export default function Room() {
 
   const onUploaded = useCallback((file: FilePublic) => {
     setFiles((prev) => [...prev, file]);
+  }, []);
+
+  const handleExtended = useCallback((newExpiresAt: number) => {
+    setState((prev) => (prev.kind === "ready" ? { ...prev, room: { ...prev.room, expiresAt: newExpiresAt } } : prev));
   }, []);
 
   const ready = state.kind === "ready";
@@ -166,6 +173,39 @@ export default function Room() {
   function exitSelectMode() {
     setSelectMode(false);
     setSelectedIds(new Set());
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  // Downloads the selection one file at a time instead of zipping them —
+  // each file only starts once the previous one has fully arrived, so the
+  // per-card pill (gray "Downloading" -> green "Downloaded") always matches
+  // what's actually happening instead of firing every request at once.
+  async function handleDownloadSelected() {
+    if (!ready || selectedIds.size === 0 || downloadingSelected) return;
+    const ids = Array.from(selectedIds);
+
+    setDownloadingSelected(true);
+    for (const id of ids) {
+      const file = files.find((f) => f.id === id);
+      if (!file) continue;
+
+      setDownloadStatuses((prev) => new Map(prev).set(id, "downloading"));
+      try {
+        await downloadFileToDisk(roomId, id, file.originalName, state.sessionToken);
+        setDownloadStatuses((prev) => new Map(prev).set(id, "done"));
+      } catch (err) {
+        setDownloadStatuses((prev) => {
+          const next = new Map(prev);
+          next.delete(id);
+          return next;
+        });
+        setActionError(err instanceof ApiError ? err.message : `Couldn't download ${file.originalName}.`);
+      }
+    }
+    setDownloadingSelected(false);
   }
 
   async function handleDeleteSelected() {
@@ -314,8 +354,17 @@ export default function Room() {
         <div className="room-header">
           <h1 className="room-name">{room.roomName}</h1>
           <p className="subtext">Original files. No compression.</p>
-          <CountdownTimer expiresAt={room.expiresAt} />
+          <div className="room-header-pills">
+            <NetworkSignal />
+          </div>
         </div>
+
+        <CountdownTimer
+          roomId={room.id}
+          sessionToken={sessionToken}
+          expiresAt={room.expiresAt}
+          onExtended={handleExtended}
+        />
 
         <div className="share-row">
           <CopyLinkButton roomId={room.id} sessionToken={sessionToken} />
@@ -408,6 +457,16 @@ export default function Room() {
                   Select
                 </button>
               )}
+              {selectMode && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-small"
+                  onClick={clearSelection}
+                  disabled={selectedIds.size === 0}
+                >
+                  Clear Selection
+                </button>
+              )}
             </div>
           </div>
 
@@ -424,10 +483,11 @@ export default function Room() {
                   file={file}
                   roomId={room.id}
                   sessionToken={sessionToken}
-                  onPreview={setPreviewFile}
+                  onPreview={(f) => setPreviewFileId(f.id)}
                   selectMode={selectMode}
                   selected={selectedIds.has(file.id)}
                   onToggleSelect={toggleSelect}
+                  downloadStatus={downloadStatuses.get(file.id)}
                 />
               ))}
             </div>
@@ -458,12 +518,14 @@ export default function Room() {
             </button>
             {selectedIds.size > 0 && (
               <>
-                <a
+                <button
+                  type="button"
                   className="btn btn-primary btn-small"
-                  href={downloadSelectedUrl(room.id, sessionToken, Array.from(selectedIds))}
+                  onClick={handleDownloadSelected}
+                  disabled={downloadingSelected}
                 >
-                  Download ({selectedIds.size})
-                </a>
+                  {downloadingSelected ? "Downloading…" : `Download (${selectedIds.size})`}
+                </button>
                 <button
                   type="button"
                   className="btn btn-danger btn-small"
@@ -478,12 +540,18 @@ export default function Room() {
         </div>
       )}
 
-      {previewFile && (
+      {previewFileId && visibleFiles.some((f) => f.id === previewFileId) && (
         <PreviewModal
-          file={previewFile}
+          files={visibleFiles}
+          initialFileId={previewFileId}
           roomId={room.id}
           sessionToken={sessionToken}
-          onClose={() => setPreviewFile(null)}
+          selectedIds={selectedIds}
+          onToggleSelect={(fileId) => {
+            if (!selectMode) setSelectMode(true);
+            toggleSelect(fileId);
+          }}
+          onClose={() => setPreviewFileId(null)}
         />
       )}
     </div>

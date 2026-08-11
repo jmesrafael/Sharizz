@@ -47,6 +47,10 @@ export interface RoomStateResponse {
   folders: FolderPublic[];
 }
 
+export interface ExtendRoomResponse {
+  expiresAt: number;
+}
+
 export interface ApiErrorBody {
   error: string;
   code: ApiErrorCode;
@@ -105,8 +109,54 @@ export const LIMITS = {
   MAX_FOLDERS_PER_ROOM: 100,
   MAX_GATE_ATTEMPTS: 8,
   ROOM_LIFETIME_MS: 24 * 60 * 60 * 1000,
+  // Session tokens outlive the room's initial expiry on purpose — the room
+  // row's expires_at (checked fresh on every request) is the real gate, and
+  // it can be pushed out by the hidden extend action. Baking the room's
+  // expiry into the token itself would strand already-shared guest links
+  // the moment the *original* window closed, even after an extension.
+  SESSION_TOKEN_LIFETIME_MS: 30 * 24 * 60 * 60 * 1000,
   DOWNLOAD_ALL_ZIP_MAX_BYTES: 2 * 1024 * 1024 * 1024, // 2 GB — beyond this, use individual downloads
+  // Files above this size go through the resumable (chunked) multipart path
+  // instead of a single PUT, so a network drop only costs one chunk, not
+  // the whole file. R2 requires every part but the last to be >= 5 MB.
+  MULTIPART_THRESHOLD_BYTES: 24 * 1024 * 1024, // 24 MB
+  MULTIPART_CHUNK_SIZE_BYTES: 8 * 1024 * 1024, // 8 MB
 } as const;
+
+// Resumable upload flow: POST /uploads creates the multipart upload, PUT
+// /uploads/:uploadId/parts/:partNumber streams each chunk, POST
+// /uploads/:uploadId/complete assembles them into the final R2 object. The
+// client persists {key, uploadId, parts} locally so a reload or a dropped
+// connection can resume from the next missing chunk instead of restarting.
+export interface MultipartInitRequest {
+  name: string;
+  type: string;
+  size: number;
+  folderId?: string | null;
+}
+
+export interface MultipartInitResponse {
+  fileId: string;
+  key: string;
+  uploadId: string;
+  originalName: string;
+  mimeType: string;
+  folderId: string | null;
+}
+
+export interface MultipartPart {
+  partNumber: number;
+  etag: string;
+}
+
+export interface MultipartCompleteRequest {
+  key: string;
+  fileId: string;
+  originalName: string;
+  mimeType: string;
+  folderId: string | null;
+  parts: MultipartPart[];
+}
 
 export const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",

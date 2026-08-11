@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { downloadZip } from "client-zip";
 import { R2_FREE_TIER } from "../../../shared/types";
-import type { Env } from "../types";
+import type { Env, RoomRow } from "../types";
 import { getConfig } from "../lib/config";
 import { getRoomById, isRoomLive, incrementRoomStorage, setRoomStorage } from "../lib/roomsRepo";
 import {
@@ -36,6 +36,84 @@ async function authorizeRoom(c: Context<{ Bindings: Env }>, roomId: string) {
   return { room };
 }
 
+interface UploadValidation {
+  originalName: string;
+  mimeType: string;
+  folderId: string | null;
+}
+
+// Shared by the direct single-shot PUT and the multipart init route so both
+// paths enforce the same name/type/quota rules against the same declared size.
+async function validateUpload(
+  c: Context<{ Bindings: Env }>,
+  roomId: string,
+  room: RoomRow,
+  rawName: string | undefined,
+  declaredType: string,
+  folderIdParam: string | null,
+  size: number
+): Promise<{ ok: true; data: UploadValidation } | { ok: false; error: Response }> {
+  const config = getConfig(c.env);
+
+  if (!rawName) return { ok: false, error: apiError(c, "VALIDATION_ERROR", "Missing file name.") };
+  const originalName = sanitizeDisplayFilename(rawName);
+  const mimeType = resolveMimeType(declaredType, originalName);
+  if (!mimeType) return { ok: false, error: apiError(c, "INVALID_FILE_TYPE", "This file type is not supported.") };
+
+  const folderId = folderIdParam || null;
+  if (folderId) {
+    const folder = await getFolderById(c.env, folderId, roomId);
+    if (!folder) return { ok: false, error: apiError(c, "FOLDER_NOT_FOUND", "Folder not found.") };
+  }
+
+  if (!size || size <= 0) {
+    return { ok: false, error: apiError(c, "VALIDATION_ERROR", "A valid file size is required.") };
+  }
+  if (size > config.MAX_FILE_SIZE) {
+    return {
+      ok: false,
+      error: apiError(
+        c,
+        "FILE_TOO_LARGE",
+        `Files must be ${Math.floor(config.MAX_FILE_SIZE / (1024 * 1024))} MB or smaller.`
+      ),
+    };
+  }
+
+  const fileCount = await countFilesForRoom(c.env, roomId);
+  if (fileCount >= config.MAX_FILES_PER_ROOM) {
+    return {
+      ok: false,
+      error: apiError(c, "TOO_MANY_FILES", `Rooms are limited to ${config.MAX_FILES_PER_ROOM} files.`),
+    };
+  }
+
+  if (room.storage_bytes_used + size > config.MAX_ROOM_STORAGE) {
+    return {
+      ok: false,
+      error: apiError(
+        c,
+        "ROOM_STORAGE_LIMIT",
+        `This room has reached its ${Math.floor(config.MAX_ROOM_STORAGE / (1024 * 1024 * 1024))} GB storage limit.`
+      ),
+    };
+  }
+
+  const usage = await getUsageSnapshot(c.env);
+  if (usage.storageBytes + size > R2_FREE_TIER.STORAGE_BYTES || usage.classAOps + 1 > R2_FREE_TIER.CLASS_A_OPS) {
+    return {
+      ok: false,
+      error: apiError(
+        c,
+        "GLOBAL_QUOTA_EXCEEDED",
+        "This app has reached its free storage quota for the month. Please try again later."
+      ),
+    };
+  }
+
+  return { ok: true, data: { originalName, mimeType, folderId } };
+}
+
 // Direct-to-R2 style upload: the browser streams the raw file body straight
 // through to this endpoint, which pipes it into R2 without buffering it in
 // memory. Metadata travels via query params (not multipart) so we never
@@ -49,57 +127,19 @@ files.put("/:id/files", async (c) => {
 
   const rawName = c.req.query("name");
   const declaredType = c.req.query("type") ?? "";
-  if (!rawName) return apiError(c, "VALIDATION_ERROR", "Missing file name.");
-
-  const originalName = sanitizeDisplayFilename(decodeURIComponent(rawName));
-  const mimeType = resolveMimeType(declaredType, originalName);
-  if (!mimeType) return apiError(c, "INVALID_FILE_TYPE", "This file type is not supported.");
-
-  const folderId = c.req.query("folderId") || null;
-  if (folderId) {
-    const folder = await getFolderById(c.env, folderId, roomId);
-    if (!folder) return apiError(c, "FOLDER_NOT_FOUND", "Folder not found.");
-  }
-
   const contentLength = Number(c.req.header("Content-Length") ?? "0");
-  if (!contentLength || contentLength <= 0) {
-    return apiError(c, "VALIDATION_ERROR", "Content-Length header is required.");
-  }
-  if (contentLength > config.MAX_FILE_SIZE) {
-    return apiError(
-      c,
-      "FILE_TOO_LARGE",
-      `Files must be ${Math.floor(config.MAX_FILE_SIZE / (1024 * 1024))} MB or smaller.`
-    );
-  }
 
-  const fileCount = await countFilesForRoom(c.env, roomId);
-  if (fileCount >= config.MAX_FILES_PER_ROOM) {
-    return apiError(c, "TOO_MANY_FILES", `Rooms are limited to ${config.MAX_FILES_PER_ROOM} files.`);
-  }
-
-  if (auth.room.storage_bytes_used + contentLength > config.MAX_ROOM_STORAGE) {
-    return apiError(
-      c,
-      "ROOM_STORAGE_LIMIT",
-      `This room has reached its ${Math.floor(config.MAX_ROOM_STORAGE / (1024 * 1024 * 1024))} GB storage limit.`
-    );
-  }
-
-  // Global stop-loss: refuse new uploads once total stored bytes (or this
-  // month's op counts) would clear R2's free tier, so the app never
-  // silently starts accruing storage/operation charges.
-  const usage = await getUsageSnapshot(c.env);
-  if (
-    usage.storageBytes + contentLength > R2_FREE_TIER.STORAGE_BYTES ||
-    usage.classAOps + 1 > R2_FREE_TIER.CLASS_A_OPS
-  ) {
-    return apiError(
-      c,
-      "GLOBAL_QUOTA_EXCEEDED",
-      "This app has reached its free storage quota for the month. Please try again later."
-    );
-  }
+  const validation = await validateUpload(
+    c,
+    roomId,
+    auth.room,
+    rawName ? decodeURIComponent(rawName) : undefined,
+    declaredType,
+    c.req.query("folderId") || null,
+    contentLength
+  );
+  if (!validation.ok) return validation.error;
+  const { originalName, mimeType, folderId } = validation.data;
 
   const body = c.req.raw.body;
   if (!body) return apiError(c, "VALIDATION_ERROR", "Request body is required.");
@@ -157,6 +197,199 @@ files.put("/:id/files", async (c) => {
     },
     201
   );
+});
+
+// Resumable upload flow (for large files): init creates the R2 multipart
+// upload and returns the key/uploadId the client needs for every subsequent
+// call. Nothing is written to the DB until complete() succeeds, so a
+// half-finished upload never shows up as a file.
+files.post("/:id/uploads", async (c) => {
+  const roomId = c.req.param("id");
+  const auth = await authorizeRoom(c, roomId);
+  if ("error" in auth) return auth.error;
+
+  let body: { name?: unknown; type?: unknown; size?: unknown; folderId?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, "VALIDATION_ERROR", "Invalid request body.");
+  }
+
+  const rawName = typeof body.name === "string" ? body.name : undefined;
+  const declaredType = typeof body.type === "string" ? body.type : "";
+  const size = typeof body.size === "number" ? body.size : 0;
+  const folderId = typeof body.folderId === "string" ? body.folderId : null;
+
+  const validation = await validateUpload(c, roomId, auth.room, rawName, declaredType, folderId, size);
+  if (!validation.ok) return validation.error;
+  const { originalName, mimeType, folderId: validFolderId } = validation.data;
+
+  const fileId = generateFileId();
+  const storageKey = buildStorageKey(roomId, fileId, originalName);
+
+  let upload;
+  try {
+    upload = await c.env.MEDIA_BUCKET.createMultipartUpload(storageKey, {
+      httpMetadata: { contentType: mimeType },
+      customMetadata: { roomId, originalName },
+    });
+  } catch {
+    return apiError(c, "STORAGE_UNAVAILABLE", "Couldn't start this upload. Please try again.");
+  }
+
+  await incrementClassAOps(c.env);
+
+  return c.json(
+    {
+      fileId,
+      key: storageKey,
+      uploadId: upload.uploadId,
+      originalName,
+      mimeType,
+      folderId: validFolderId,
+    },
+    201
+  );
+});
+
+// Each chunk is a separate request, so a dropped connection only costs the
+// in-flight part — the client retries just that part, or resumes later,
+// instead of re-uploading the whole file.
+files.put("/:id/uploads/:uploadId/parts/:partNumber", async (c) => {
+  const roomId = c.req.param("id");
+  const auth = await authorizeRoom(c, roomId);
+  if ("error" in auth) return auth.error;
+
+  const uploadId = c.req.param("uploadId");
+  const partNumber = Number(c.req.param("partNumber"));
+  const key = c.req.query("key");
+  if (!key || !key.startsWith(`rooms/${roomId}/`)) return apiError(c, "VALIDATION_ERROR", "Invalid upload key.");
+  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) {
+    return apiError(c, "VALIDATION_ERROR", "Invalid part number.");
+  }
+
+  const body = c.req.raw.body;
+  if (!body) return apiError(c, "VALIDATION_ERROR", "Request body is required.");
+
+  try {
+    const multipartUpload = c.env.MEDIA_BUCKET.resumeMultipartUpload(key, uploadId);
+    const part = await multipartUpload.uploadPart(partNumber, body);
+    await incrementClassAOps(c.env);
+    return c.json({ partNumber, etag: part.etag }, 200);
+  } catch {
+    return apiError(c, "STORAGE_UNAVAILABLE", "This chunk failed to upload. Please retry.");
+  }
+});
+
+files.post("/:id/uploads/:uploadId/complete", async (c) => {
+  const roomId = c.req.param("id");
+  const auth = await authorizeRoom(c, roomId);
+  if ("error" in auth) return auth.error;
+
+  const uploadId = c.req.param("uploadId");
+
+  let body: {
+    key?: unknown;
+    fileId?: unknown;
+    originalName?: unknown;
+    mimeType?: unknown;
+    folderId?: unknown;
+    parts?: unknown;
+  };
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, "VALIDATION_ERROR", "Invalid request body.");
+  }
+
+  const key = typeof body.key === "string" ? body.key : "";
+  const fileId = typeof body.fileId === "string" ? body.fileId : "";
+  const originalName = typeof body.originalName === "string" ? body.originalName : "";
+  const mimeType = typeof body.mimeType === "string" ? body.mimeType : "";
+  const folderId = typeof body.folderId === "string" ? body.folderId : null;
+  const rawParts = Array.isArray(body.parts) ? body.parts : [];
+
+  if (!key.startsWith(`rooms/${roomId}/`) || !fileId || !originalName || !mimeType || rawParts.length === 0) {
+    return apiError(c, "VALIDATION_ERROR", "Invalid completion payload.");
+  }
+
+  const parts = rawParts.filter(
+    (p): p is { partNumber: number; etag: string } =>
+      typeof p === "object" &&
+      p !== null &&
+      typeof (p as Record<string, unknown>).partNumber === "number" &&
+      typeof (p as Record<string, unknown>).etag === "string"
+  );
+  if (parts.length !== rawParts.length) return apiError(c, "VALIDATION_ERROR", "Invalid parts list.");
+  parts.sort((a, b) => a.partNumber - b.partNumber);
+
+  const config = getConfig(c.env);
+  let object;
+  try {
+    const multipartUpload = c.env.MEDIA_BUCKET.resumeMultipartUpload(key, uploadId);
+    object = await multipartUpload.complete(parts);
+  } catch {
+    return apiError(c, "STORAGE_UNAVAILABLE", "Couldn't finish this upload. Please retry.");
+  }
+
+  if (object.size > config.MAX_FILE_SIZE) {
+    await c.env.MEDIA_BUCKET.delete(key);
+    return apiError(
+      c,
+      "FILE_TOO_LARGE",
+      `Files must be ${Math.floor(config.MAX_FILE_SIZE / (1024 * 1024))} MB or smaller.`
+    );
+  }
+
+  const uploadedAt = Date.now();
+  await insertFile(c.env, {
+    id: fileId,
+    roomId,
+    folderId,
+    originalName,
+    storageKey: key,
+    mimeType,
+    fileSize: object.size,
+    uploadedAt,
+  });
+  await incrementRoomStorage(c.env, roomId, object.size);
+
+  return c.json(
+    {
+      id: fileId,
+      roomId,
+      folderId,
+      originalName,
+      mimeType,
+      fileSize: object.size,
+      uploadedAt,
+      width: null,
+      height: null,
+      duration: null,
+    },
+    201
+  );
+});
+
+// Best-effort cleanup when a resumable upload is abandoned (e.g. the user
+// removes the item instead of retrying) — frees the parts R2 is holding.
+files.delete("/:id/uploads/:uploadId", async (c) => {
+  const roomId = c.req.param("id");
+  const auth = await authorizeRoom(c, roomId);
+  if ("error" in auth) return auth.error;
+
+  const uploadId = c.req.param("uploadId");
+  const key = c.req.query("key");
+  if (!key || !key.startsWith(`rooms/${roomId}/`)) return apiError(c, "VALIDATION_ERROR", "Invalid upload key.");
+
+  try {
+    const multipartUpload = c.env.MEDIA_BUCKET.resumeMultipartUpload(key, uploadId);
+    await multipartUpload.abort();
+  } catch {
+    // Already completed/aborted/expired — nothing left to clean up.
+  }
+
+  return c.json({ aborted: true }, 200);
 });
 
 files.get("/:id/files/:fileId", async (c) => {

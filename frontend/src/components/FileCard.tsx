@@ -15,6 +15,7 @@ interface Props {
   selectMode?: boolean;
   selected?: boolean;
   onToggleSelect?: (fileId: string) => void;
+  downloadStatus?: "downloading" | "done";
 }
 
 export default function FileCard({
@@ -25,6 +26,7 @@ export default function FileCard({
   selectMode = false,
   selected = false,
   onToggleSelect,
+  downloadStatus,
 }: Props) {
   const [thumbFailed, setThumbFailed] = useState(false);
   const isImage = file.mimeType.startsWith("image/");
@@ -38,6 +40,11 @@ export default function FileCard({
         onClick={() => (selectMode ? onToggleSelect?.(file.id) : onPreview(file))}
         aria-label={selectMode ? `Select ${file.originalName}` : `Preview ${file.originalName}`}
       >
+        {downloadStatus && (
+          <span className={`download-status-pill ${downloadStatus}`}>
+            {downloadStatus === "downloading" ? "Downloading" : "Downloaded"}
+          </span>
+        )}
         {selectMode && (
           <input
             type="checkbox"

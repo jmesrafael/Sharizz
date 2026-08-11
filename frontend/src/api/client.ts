@@ -1,8 +1,12 @@
 import type {
   ApiErrorBody,
   CreateRoomResponse,
+  ExtendRoomResponse,
   FilePublic,
   FolderPublic,
+  MultipartCompleteRequest,
+  MultipartInitRequest,
+  MultipartInitResponse,
   RoomStateResponse,
   UsageStatus,
 } from "@shared/types";
@@ -64,6 +68,30 @@ export function downloadSelectedUrl(roomId: string, sessionToken: string, fileId
   return `${API_BASE_URL}/api/rooms/${roomId}/download-selected?fileIds=${ids}&token=${encodeURIComponent(sessionToken)}`;
 }
 
+// Fetches the file fully, then hands the browser a blob URL to save — unlike
+// a plain <a download> click, this resolves only once the bytes have
+// actually arrived, so callers can drive a real "downloading -> downloaded"
+// indicator per file instead of firing every download at once and hoping.
+export async function downloadFileToDisk(
+  roomId: string,
+  fileId: string,
+  originalName: string,
+  sessionToken: string
+): Promise<void> {
+  const res = await fetch(downloadFileUrl(roomId, fileId, sessionToken));
+  if (!res.ok) throw new ApiError({ error: "Download failed.", code: "FILE_NOT_FOUND" }, res.status);
+
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = originalName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function deleteFiles(roomId: string, sessionToken: string, fileIds: string[]): Promise<{ deletedIds: string[] }> {
   return request(`/api/rooms/${roomId}/files`, {
     method: "DELETE",
@@ -81,6 +109,13 @@ export function clearStorage(roomId: string, sessionToken: string): Promise<{ de
 
 export function getUsageStatus(): Promise<UsageStatus> {
   return request("/api/usage");
+}
+
+export function extendRoom(roomId: string, sessionToken: string): Promise<ExtendRoomResponse> {
+  return request(`/api/rooms/${roomId}/extend`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  });
 }
 
 export function createFolder(
@@ -153,4 +188,87 @@ export function uploadFile(
   xhr.send(file);
 
   return { abort: () => xhr.abort() };
+}
+
+export function initMultipartUpload(
+  roomId: string,
+  sessionToken: string,
+  init: MultipartInitRequest
+): Promise<MultipartInitResponse> {
+  return request(`/api/rooms/${roomId}/uploads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+    body: JSON.stringify(init),
+  });
+}
+
+export function completeMultipartUpload(
+  roomId: string,
+  sessionToken: string,
+  uploadId: string,
+  payload: MultipartCompleteRequest
+): Promise<FilePublic> {
+  return request(`/api/rooms/${roomId}/uploads/${encodeURIComponent(uploadId)}/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function abortMultipartUpload(
+  roomId: string,
+  sessionToken: string,
+  uploadId: string,
+  key: string
+): Promise<{ aborted: boolean }> {
+  return request(
+    `/api/rooms/${roomId}/uploads/${encodeURIComponent(uploadId)}?key=${encodeURIComponent(key)}`,
+    { method: "DELETE", headers: { Authorization: `Bearer ${sessionToken}` } }
+  );
+}
+
+// One request per chunk: a dropped connection only loses the in-flight
+// chunk, and progress is reported per-chunk so overall upload % stays live
+// even on a multi-gigabyte file.
+export function uploadPart(
+  roomId: string,
+  sessionToken: string,
+  key: string,
+  uploadId: string,
+  partNumber: number,
+  blob: Blob,
+  onProgress: (loaded: number) => void
+): { promise: Promise<{ partNumber: number; etag: string }>; abort: () => void } {
+  const xhr = new XMLHttpRequest();
+  const url = `${API_BASE_URL}/api/rooms/${roomId}/uploads/${encodeURIComponent(uploadId)}/parts/${partNumber}?key=${encodeURIComponent(key)}`;
+
+  xhr.open("PUT", url, true);
+  xhr.setRequestHeader("Authorization", `Bearer ${sessionToken}`);
+  xhr.setRequestHeader("Content-Type", "application/octet-stream");
+
+  xhr.upload.onprogress = (event) => {
+    if (event.lengthComputable) onProgress(event.loaded);
+  };
+
+  const promise = new Promise<{ partNumber: number; etag: string }>((resolve, reject) => {
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(blob.size);
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        try {
+          const body: ApiErrorBody = JSON.parse(xhr.responseText);
+          reject(new ApiError(body, xhr.status));
+        } catch {
+          reject(new Error("This chunk failed to upload."));
+        }
+      }
+    };
+    xhr.onerror = () => reject(new Error("Network error during upload."));
+    xhr.onabort = () => reject(new Error("Upload cancelled."));
+  });
+
+  xhr.send(blob);
+
+  return { promise, abort: () => xhr.abort() };
 }
