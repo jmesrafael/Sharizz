@@ -61,6 +61,34 @@ describe("room creation via time-gate", () => {
   });
 });
 
+describe("joining an existing room via its code", () => {
+  it("returns the same room and a fresh session token when the code matches a live room's room_code", async () => {
+    const created = await createRoom(currentTimeCode(), "203.0.113.20");
+    const { room, sessionToken: firstToken } = await created.json<any>();
+    expect(typeof room.roomCode).toBe("string");
+
+    const joined = await createRoom(room.roomCode, "203.0.113.21");
+    expect(joined.status).toBe(200);
+    const { room: joinedRoom, sessionToken: secondToken } = await joined.json<any>();
+    expect(joinedRoom.id).toBe(room.id);
+    expect(secondToken).not.toBe(firstToken);
+  });
+
+  it("rejects a room_code that belonged to a since-deleted room", async () => {
+    const created = await createRoom(currentTimeCode(), "203.0.113.22");
+    const { room, sessionToken } = await created.json<any>();
+
+    await app.request(
+      `/api/rooms/${room.id}`,
+      { method: "DELETE", headers: { Authorization: `Bearer ${sessionToken}` } },
+      env
+    );
+
+    const res = await createRoom(room.roomCode, "203.0.113.23");
+    expect(res.status).toBe(401);
+  });
+});
+
 describe("room access authorization", () => {
   it("rejects room state requests without a session token", async () => {
     const created = await createRoom(currentTimeCode(), "203.0.113.6");

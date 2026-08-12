@@ -13,6 +13,7 @@ import {
 } from "../api/client";
 import { getSessionToken, saveSessionToken } from "../api/roomSession";
 import CountdownTimer from "../components/CountdownTimer";
+import CopyCodeButton from "../components/CopyCodeButton";
 import CopyLinkButton from "../components/CopyLinkButton";
 import FileCard from "../components/FileCard";
 import FolderCard from "../components/FolderCard";
@@ -507,12 +508,7 @@ export default function Room() {
       <div className="container container-compact">
         {/* Countdown renders itself fixed to the bottom-right corner, so its
             position in the markup is irrelevant — kept out of the header row. */}
-        <CountdownTimer
-          roomId={room.id}
-          sessionToken={sessionToken}
-          expiresAt={room.expiresAt}
-          onExtended={handleExtended}
-        />
+        <CountdownTimer expiresAt={room.expiresAt} />
 
         <div className="room-header">
           <div className="toolbar-group">
@@ -521,7 +517,10 @@ export default function Room() {
               {room.roomName}
             </h1>
           </div>
-          <CopyLinkButton roomId={room.id} sessionToken={sessionToken} />
+          <div className="toolbar-group">
+            <CopyLinkButton roomId={room.id} sessionToken={sessionToken} />
+            <CopyCodeButton code={room.roomCode} />
+          </div>
         </div>
 
         {folderStack.length > 0 && (
@@ -685,6 +684,9 @@ export default function Room() {
         <StorageMeter
           usedBytes={files.reduce((sum, f) => sum + f.fileSize, 0)}
           limitBytes={room.storageLimitBytes}
+          roomId={room.id}
+          sessionToken={sessionToken}
+          onExtended={handleExtended}
         />
       </div>
 

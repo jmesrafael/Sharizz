@@ -14,7 +14,15 @@ import { hashPin } from "../lib/pin";
 import { generateFolderId, generateRoomId } from "../lib/ids";
 import { validateFolderName } from "../lib/sanitize";
 import { isValidTimeCode, friendlyRoomName } from "../lib/timeGate";
-import { extendRoomExpiry, getRoomById, insertRoom, isRoomLive, toPublicRoom } from "../lib/roomsRepo";
+import {
+  extendRoomExpiry,
+  generateUniqueRoomCode,
+  getRoomByCode,
+  getRoomById,
+  insertRoom,
+  isRoomLive,
+  toPublicRoom,
+} from "../lib/roomsRepo";
 import { deleteRoomData } from "../lib/roomCleanup";
 import { listFilesForRoom, toPublicFile } from "../lib/filesRepo";
 import {
@@ -70,49 +78,73 @@ rooms.post("/", async (c) => {
   }
 
   const code = (body.code ?? "").toString().trim();
-  if (!isValidTimeCode(code)) {
-    await recordFailedAttempt(c.env, GATE_KEY, clientKey);
-    const remaining = config.MAX_GATE_ATTEMPTS - (attempts + 1);
-    if (remaining <= 0) {
-      return apiError(c, "TOO_MANY_ATTEMPTS", LOCKOUT_MESSAGE, { retryAfterMs: config.GATE_LOCKOUT_MS });
-    }
-    return apiError(c, "INVALID_CODE", "Incorrect code.", { attemptsRemaining: remaining });
-  }
-  await clearAttempts(c.env, GATE_KEY, clientKey);
-
   const now = Date.now();
-  const expiresAt = now + LIMITS.ROOM_LIFETIME_MS;
-  const id = generateRoomId();
-  const roomName = friendlyRoomName(new Date(now));
-  // The code itself is no longer a credential once the room exists (guest
-  // links carry their own signed session token) — hashed only to satisfy
-  // the schema's NOT NULL column.
-  const pinHash = await hashPin(code);
 
-  await insertRoom(c.env, { id, roomName, pinHash, createdAt: now, expiresAt });
+  // The field is multi-purpose: the current clock time creates a fresh
+  // room, while a code copied from inside an existing (still-live) room
+  // ("Copy Code") jumps straight back into it instead. Time codes are
+  // checked first since they're the more time-sensitive interpretation.
+  if (isValidTimeCode(code)) {
+    await clearAttempts(c.env, GATE_KEY, clientKey);
 
-  const room = {
-    id,
-    room_name: roomName,
-    pin_hash: pinHash,
-    created_at: now,
-    expires_at: expiresAt,
-    status: "active" as const,
-    storage_bytes_used: 0,
-  };
-  // Deliberately not tied to the room's expiry — see SESSION_TOKEN_LIFETIME_MS.
-  const sessionToken = await createSessionToken(c.env.SESSION_SECRET, id, now + LIMITS.SESSION_TOKEN_LIFETIME_MS);
+    const expiresAt = now + LIMITS.ROOM_LIFETIME_MS;
+    const id = generateRoomId();
+    const roomName = friendlyRoomName(new Date(now));
+    const roomCode = await generateUniqueRoomCode(c.env, now);
+    // The code itself is no longer a credential once the room exists (guest
+    // links carry their own signed session token) — hashed only to satisfy
+    // the schema's NOT NULL column.
+    const pinHash = await hashPin(code);
 
-  const response: CreateRoomResponse = {
-    room: toPublicRoom(room, now, config.MAX_ROOM_STORAGE),
-    sessionToken,
-  };
-  return c.json(response, 201);
+    await insertRoom(c.env, { id, roomName, roomCode, pinHash, createdAt: now, expiresAt });
+
+    const room = {
+      id,
+      room_name: roomName,
+      room_code: roomCode,
+      pin_hash: pinHash,
+      created_at: now,
+      expires_at: expiresAt,
+      status: "active" as const,
+      storage_bytes_used: 0,
+    };
+    // Deliberately not tied to the room's expiry — see SESSION_TOKEN_LIFETIME_MS.
+    const sessionToken = await createSessionToken(c.env.SESSION_SECRET, id, now + LIMITS.SESSION_TOKEN_LIFETIME_MS);
+
+    const response: CreateRoomResponse = {
+      room: toPublicRoom(room, now, config.MAX_ROOM_STORAGE),
+      sessionToken,
+    };
+    return c.json(response, 201);
+  }
+
+  const existingRoom = await getRoomByCode(c.env, code, now);
+  if (existingRoom) {
+    await clearAttempts(c.env, GATE_KEY, clientKey);
+
+    const sessionToken = await createSessionToken(
+      c.env.SESSION_SECRET,
+      existingRoom.id,
+      now + LIMITS.SESSION_TOKEN_LIFETIME_MS
+    );
+    const response: CreateRoomResponse = {
+      room: toPublicRoom(existingRoom, now, config.MAX_ROOM_STORAGE),
+      sessionToken,
+    };
+    return c.json(response, 200);
+  }
+
+  await recordFailedAttempt(c.env, GATE_KEY, clientKey);
+  const remaining = config.MAX_GATE_ATTEMPTS - (attempts + 1);
+  if (remaining <= 0) {
+    return apiError(c, "TOO_MANY_ATTEMPTS", LOCKOUT_MESSAGE, { retryAfterMs: config.GATE_LOCKOUT_MS });
+  }
+  return apiError(c, "INVALID_CODE", "Incorrect code.", { attemptsRemaining: remaining });
 });
 
-// Hidden extension: clicking the corner countdown 5 times pushes the room's
-// deletion out by another ROOM_LIFETIME_MS. No UI hint that this exists —
-// see CountdownTimer.tsx on the frontend.
+// Hidden extension: clicking the storage-used total 5 times pushes the
+// room's deletion out by another ROOM_LIFETIME_MS. No UI hint that this
+// exists — see StorageMeter.tsx on the frontend.
 rooms.post("/:id/extend", async (c) => {
   const roomId = c.req.param("id");
   const room = await getRoomById(c.env, roomId);

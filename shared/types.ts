@@ -1,6 +1,7 @@
 export interface RoomPublic {
   id: string;
   roomName: string;
+  roomCode: string;
   createdAt: number;
   expiresAt: number;
   status: "active" | "expired";

@@ -437,9 +437,18 @@ input {
 }
 
 .storage-meter-text {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  font-family: var(--font-body);
   font-size: 11.5px;
   color: var(--text-faint);
   text-align: center;
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .breadcrumb {

@@ -18,6 +18,7 @@ export interface RoomRow {
   expires_at: number;
   status: "active" | "expired";
   storage_bytes_used: number;
+  room_code: string;
 }
 
 export interface FileRow {
