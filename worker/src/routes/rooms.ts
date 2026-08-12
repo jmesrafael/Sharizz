@@ -4,6 +4,7 @@ import type {
   CreateFolderRequest,
   CreateRoomRequest,
   CreateRoomResponse,
+  DeleteRoomResponse,
   ExtendRoomResponse,
   RoomStateResponse,
 } from "../../../shared/types";
@@ -128,6 +129,22 @@ rooms.post("/:id/extend", async (c) => {
 
   const expiresAt = await extendRoomExpiry(c.env, roomId, LIMITS.ROOM_LIFETIME_MS);
   const response: ExtendRoomResponse = { expiresAt };
+  return c.json(response, 200);
+});
+
+// Immediate full deletion — used by the hidden "storage history" panel
+// (10 clicks on the room name/date) to let the room's owner clean up a
+// storage right away instead of waiting for it to expire on its own.
+rooms.delete("/:id", async (c) => {
+  const roomId = c.req.param("id");
+  const room = await getRoomById(c.env, roomId);
+  if (!room) return apiError(c, "ROOM_NOT_FOUND", "Room not found.");
+
+  const authorized = await requireRoomSession(c, roomId);
+  if (!authorized) return apiError(c, "UNAUTHORIZED", "A valid room session is required.");
+
+  await deleteRoomData(c.env, roomId);
+  const response: DeleteRoomResponse = { deleted: true };
   return c.json(response, 200);
 });
 

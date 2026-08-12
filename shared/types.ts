@@ -58,6 +58,10 @@ export interface ExtendRoomResponse {
   expiresAt: number;
 }
 
+export interface DeleteRoomResponse {
+  deleted: true;
+}
+
 export interface ApiErrorBody {
   error: string;
   code: ApiErrorCode;

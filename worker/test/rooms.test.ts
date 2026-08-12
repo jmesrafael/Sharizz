@@ -193,3 +193,54 @@ describe("hidden lifetime extension", () => {
     expect(stillGoneRes.status).toBe(404);
   });
 });
+
+describe("immediate room deletion", () => {
+  it("deletes a room and its files on request", async () => {
+    const created = await createRoom(currentTimeCode(), "203.0.113.11");
+    const { room, sessionToken } = await created.json<any>();
+
+    await app.request(
+      `/api/rooms/${room.id}/files?name=test.jpg&type=image/jpeg`,
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${sessionToken}`, "Content-Length": "3" },
+        body: new TextEncoder().encode("abc"),
+      },
+      env
+    );
+
+    const res = await app.request(
+      `/api/rooms/${room.id}`,
+      { method: "DELETE", headers: { Authorization: `Bearer ${sessionToken}` } },
+      env
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json<any>();
+    expect(body.deleted).toBe(true);
+
+    const roomRow = await env.DB.prepare("SELECT id FROM rooms WHERE id = ?").bind(room.id).first();
+    expect(roomRow).toBeNull();
+    const fileRow = await env.DB.prepare("SELECT id FROM files WHERE room_id = ?").bind(room.id).first();
+    expect(fileRow).toBeNull();
+
+    const afterRes = await app.request(
+      `/api/rooms/${room.id}`,
+      { headers: { Authorization: `Bearer ${sessionToken}` } },
+      env
+    );
+    expect(afterRes.status).toBe(404);
+  });
+
+  it("rejects deletion without a valid session", async () => {
+    const created = await createRoom(currentTimeCode(), "203.0.113.12");
+    const { room } = await created.json<any>();
+
+    const res = await app.request(`/api/rooms/${room.id}`, { method: "DELETE" }, env);
+    expect(res.status).toBe(401);
+  });
+
+  it("returns not found when deleting a room that doesn't exist", async () => {
+    const res = await app.request("/api/rooms/does-not-exist", { method: "DELETE" }, env);
+    expect(res.status).toBe(404);
+  });
+});

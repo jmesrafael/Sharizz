@@ -18,6 +18,7 @@ import FileCard from "../components/FileCard";
 import FolderCard from "../components/FolderCard";
 import NetworkSignal from "../components/NetworkSignal";
 import PreviewModal from "../components/PreviewModal";
+import StorageHistoryPanel from "../components/StorageHistoryPanel";
 import StorageMeter from "../components/StorageMeter";
 import UploadProgressList from "../components/UploadProgressList";
 import { useUploads } from "../hooks/useUploads";
@@ -53,6 +54,9 @@ export default function Room() {
   const [downloadStatuses, setDownloadStatuses] = useState<Map<string, "downloading" | "done">>(new Map());
   const [actionError, setActionError] = useState<string | null>(null);
   const [marquee, setMarquee] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [nameClicks, setNameClicks] = useState(0);
+  const nameClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragCounter = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -107,6 +111,13 @@ export default function Room() {
     load();
   }, [load]);
 
+  useEffect(
+    () => () => {
+      if (nameClickTimer.current) clearTimeout(nameClickTimer.current);
+    },
+    []
+  );
+
   const onUploaded = useCallback((file: FilePublic) => {
     setFiles((prev) => [...prev, file]);
   }, []);
@@ -118,6 +129,23 @@ export default function Room() {
   const handleExtended = useCallback((newExpiresAt: number) => {
     setState((prev) => (prev.kind === "ready" ? { ...prev, room: { ...prev.room, expiresAt: newExpiresAt } } : prev));
   }, []);
+
+  // Secret, like the corner countdown's 5-click extend: 10 clicks on the
+  // room name/date reveals every storage this device remembers.
+  const NAME_CLICKS_TO_REVEAL = 10;
+  const NAME_CLICK_RESET_MS = 2000;
+
+  function handleRoomNameClick() {
+    if (nameClickTimer.current) clearTimeout(nameClickTimer.current);
+    const next = nameClicks + 1;
+    if (next >= NAME_CLICKS_TO_REVEAL) {
+      setNameClicks(0);
+      setShowHistory(true);
+      return;
+    }
+    setNameClicks(next);
+    nameClickTimer.current = setTimeout(() => setNameClicks(0), NAME_CLICK_RESET_MS);
+  }
 
   const ready = state.kind === "ready";
   const { items, enqueueFiles, retry, dismiss } = useUploads(
@@ -458,6 +486,10 @@ export default function Room() {
   const { room, sessionToken } = state;
   const hasContent = visibleFiles.length > 0 || visibleFolders.length > 0;
 
+  if (showHistory) {
+    return <StorageHistoryPanel onBack={() => setShowHistory(false)} currentRoomId={roomId} />;
+  }
+
   return (
     <div
       className="page"
@@ -485,7 +517,9 @@ export default function Room() {
         <div className="room-header">
           <div className="toolbar-group">
             <NetworkSignal />
-            <h1 className="room-name">{room.roomName}</h1>
+            <h1 className="room-name" onClick={handleRoomNameClick}>
+              {room.roomName}
+            </h1>
           </div>
           <CopyLinkButton roomId={room.id} sessionToken={sessionToken} />
         </div>

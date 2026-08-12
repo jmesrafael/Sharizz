@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createRoom, ApiError } from "../api/client";
 import { saveSessionToken } from "../api/roomSession";
+import { addRoomToHistory } from "../api/roomHistory";
 
 const FALLBACK_LOCKOUT_MS = 60 * 1000;
 
@@ -30,6 +31,20 @@ export default function Home() {
     try {
       const { room, sessionToken } = await createRoom(code);
       saveSessionToken(room.id, sessionToken);
+      addRoomToHistory({ id: room.id, roomName: room.roomName, sessionToken, createdAt: room.createdAt });
+
+      // Best-effort: copy the guest link immediately so it's already on the
+      // clipboard the moment the room exists, in case sharing it is the
+      // very next thing that happens. Clipboard access can be silently
+      // denied by the browser — that's fine, Copy Link in the room still
+      // works as a fallback.
+      try {
+        const link = `${window.location.origin}/room/${room.id}?token=${encodeURIComponent(sessionToken)}`;
+        await navigator.clipboard.writeText(link);
+      } catch {
+        // no-op
+      }
+
       navigate(`/room/${room.id}`, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.code === "TOO_MANY_ATTEMPTS") {

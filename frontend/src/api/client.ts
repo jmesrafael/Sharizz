@@ -1,6 +1,7 @@
 import type {
   ApiErrorBody,
   CreateRoomResponse,
+  DeleteRoomResponse,
   ExtendRoomResponse,
   FilePublic,
   FolderPublic,
@@ -56,6 +57,13 @@ export function createRoom(code: string): Promise<CreateRoomResponse> {
 
 export function getRoomState(roomId: string, sessionToken: string): Promise<RoomStateResponse> {
   return request(`/api/rooms/${roomId}`, {
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  });
+}
+
+export function deleteRoom(roomId: string, sessionToken: string): Promise<DeleteRoomResponse> {
+  return request(`/api/rooms/${roomId}`, {
+    method: "DELETE",
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
 }
