@@ -52,8 +52,19 @@ export default function Room() {
   const [downloadingSelected, setDownloadingSelected] = useState(false);
   const [downloadStatuses, setDownloadStatuses] = useState<Map<string, "downloading" | "done">>(new Map());
   const [actionError, setActionError] = useState<string | null>(null);
+  const [marquee, setMarquee] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const dragCounter = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const marqueeDrag = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    mode: "select" | "deselect";
+    original: Set<string>;
+    engaged: boolean;
+  } | null>(null);
+  const suppressNextClick = useRef(false);
 
   const currentFolderId = folderStack.length > 0 ? folderStack[folderStack.length - 1].id : null;
 
@@ -183,6 +194,111 @@ export default function Room() {
 
   function clearSelection() {
     setSelectedIds(new Set());
+  }
+
+  function selectAllVisible() {
+    setSelectedIds(new Set(visibleFiles.map((f) => f.id)));
+  }
+
+  // Lightroom-style marquee select: press on a card (or empty grid space)
+  // and drag — every card the rectangle touches gets added to the
+  // selection, or removed if the drag started on an already-selected card.
+  // Pointer Events unify mouse and touch, so the same code drives both.
+  //
+  // Move/up listeners go on `window`, not the grid element: relying on the
+  // grid's own bubbled events (or element.setPointerCapture) stops tracking
+  // the instant the pointer leaves the grid's box during a fast drag, and
+  // in practice also proved unreliable with synthetic/automated pointer
+  // input. A window-level listener, added only while a drag is in flight,
+  // keeps tracking anywhere and is removed the moment the pointer lifts.
+  const MARQUEE_THRESHOLD_PX = 6;
+
+  function computeTouchedIds(rect: { left: number; right: number; top: number; bottom: number }): Set<string> {
+    const touched = new Set<string>();
+    gridRef.current?.querySelectorAll<HTMLElement>("[data-file-id]").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const intersects = r.right >= rect.left && r.left <= rect.right && r.bottom >= rect.top && r.top <= rect.bottom;
+      if (intersects) {
+        const id = el.dataset.fileId;
+        if (id) touched.add(id);
+      }
+    });
+    return touched;
+  }
+
+  function handleGridPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (!selectMode || e.button !== 0) return;
+    const targetEl = e.target as HTMLElement;
+    if (targetEl.closest(".file-download, .folder-tile, .thumb-select-overlay")) return;
+
+    const card = targetEl.closest<HTMLElement>("[data-file-id]");
+    const startId = card?.dataset.fileId ?? null;
+    const startSelected = startId ? selectedIds.has(startId) : false;
+
+    const drag = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      mode: (startSelected ? "deselect" : "select") as "select" | "deselect",
+      original: new Set(selectedIds),
+      engaged: false,
+    };
+    marqueeDrag.current = drag;
+
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== drag.pointerId) return;
+      const dx = ev.clientX - drag.startX;
+      const dy = ev.clientY - drag.startY;
+      if (!drag.engaged && Math.hypot(dx, dy) < MARQUEE_THRESHOLD_PX) return;
+      if (!drag.engaged) {
+        drag.engaged = true;
+        suppressNextClick.current = true;
+      }
+
+      const rect = {
+        left: Math.min(drag.startX, ev.clientX),
+        right: Math.max(drag.startX, ev.clientX),
+        top: Math.min(drag.startY, ev.clientY),
+        bottom: Math.max(drag.startY, ev.clientY),
+      };
+      setMarquee({ left: rect.left, top: rect.top, width: rect.right - rect.left, height: rect.bottom - rect.top });
+
+      const touched = computeTouchedIds(rect);
+      const next = new Set(drag.original);
+      touched.forEach((id) => {
+        if (drag.mode === "select") next.add(id);
+        else next.delete(id);
+      });
+      setSelectedIds(next);
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== drag.pointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      marqueeDrag.current = null;
+      setMarquee(null);
+      if (drag.engaged) {
+        // The browser still fires a trailing click on whatever's under the
+        // pointer once it lifts — swallow exactly that one so a drag-end
+        // doesn't also toggle a card a second time via its own onClick.
+        setTimeout(() => {
+          suppressNextClick.current = false;
+        }, 0);
+      }
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }
+
+  function handleGridClickCapture(e: React.MouseEvent<HTMLDivElement>) {
+    if (suppressNextClick.current) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   }
 
   // Downloads the selection one file at a time instead of zipping them —
@@ -435,14 +551,24 @@ export default function Room() {
               </button>
             )}
             {selectMode && (
-              <button
-                type="button"
-                className="btn btn-secondary btn-small"
-                onClick={clearSelection}
-                disabled={selectedIds.size === 0}
-              >
-                Clear Selection
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-small"
+                  onClick={selectAllVisible}
+                  disabled={visibleFiles.length === 0}
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-small"
+                  onClick={clearSelection}
+                  disabled={selectedIds.size === 0}
+                >
+                  Clear Selection
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -469,7 +595,18 @@ export default function Room() {
         {!hasContent ? (
           <div className="empty-state">No files yet. Upload the first one above, or drag files in.</div>
         ) : (
-          <div className="file-list" style={{ ["--tile-size" as string]: `${GRID_SIZES[gridSize]}px` }}>
+          <div
+            ref={gridRef}
+            className="file-list"
+            style={{
+              ["--tile-size" as string]: `${GRID_SIZES[gridSize]}px`,
+              // Marquee-select needs the drag gesture itself, not a page
+              // scroll, once you're in select mode — see handleGridPointerDown.
+              touchAction: selectMode ? "none" : undefined,
+            }}
+            onPointerDown={handleGridPointerDown}
+            onClickCapture={handleGridClickCapture}
+          >
             {visibleFolders.map((folder) => (
               <FolderCard key={folder.id} folder={folder} onOpen={(f) => setFolderStack((prev) => [...prev, f])} />
             ))}
@@ -487,6 +624,13 @@ export default function Room() {
               />
             ))}
           </div>
+        )}
+
+        {marquee && (
+          <div
+            className="marquee-select"
+            style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }}
+          />
         )}
 
         {actionError && <div className="error-banner">{actionError}</div>}

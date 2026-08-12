@@ -46,7 +46,7 @@ export default function FileCard({
   }, [thumbSrc]);
 
   return (
-    <div className={`file-card${selected ? " selected" : ""}`}>
+    <div className={`file-card${selected ? " selected" : ""}`} data-file-id={file.id}>
       <button
         type="button"
         className="file-thumb-btn"
@@ -76,6 +76,7 @@ export default function FileCard({
             src={thumbSrc}
             alt=""
             loading="lazy"
+            draggable={false}
             onError={() => setThumbFailed(true)}
           />
         ) : (

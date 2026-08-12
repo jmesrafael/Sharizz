@@ -520,6 +520,16 @@ input {
   gap: 8px;
 }
 
+/* Coordinates come straight from pointer clientX/clientY, so this is
+   fixed (viewport-relative) rather than absolute. */
+.marquee-select {
+  position: fixed;
+  border: 1px solid var(--accent);
+  background: rgba(201, 168, 106, 0.14);
+  pointer-events: none;
+  z-index: 45;
+}
+
 .new-folder-form {
   display: flex;
   gap: 8px;
@@ -589,6 +599,9 @@ input {
 .file-list {
   column-width: var(--tile-size, 180px);
   column-gap: 10px;
+  /* Prevents a marquee drag from also highlighting card text as the
+     pointer sweeps across it. */
+  user-select: none;
 }
 
 .file-card {
@@ -681,6 +694,8 @@ input {
   width: 100%;
   height: auto;
   display: block;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .file-thumb-placeholder {
