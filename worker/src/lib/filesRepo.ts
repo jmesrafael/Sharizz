@@ -71,7 +71,7 @@ export async function deleteAllFilesForRoom(env: Env, roomId: string): Promise<F
   return rows;
 }
 
-// Stores the derived preview's location/size/format against the original
+// Stores the derived preview JPEG's location/size against the original
 // file row. Overwriting an existing thumbnail (rare — only if the same
 // file's thumbnail upload is retried) is the caller's responsibility to
 // account for when adjusting room storage.
@@ -80,13 +80,12 @@ export async function setFileThumbnail(
   fileId: string,
   roomId: string,
   thumbnailKey: string,
-  thumbnailSize: number,
-  thumbnailMimeType: string
+  thumbnailSize: number
 ): Promise<void> {
   await env.DB.prepare(
-    "UPDATE files SET thumbnail_key = ?, thumbnail_size = ?, thumbnail_mime_type = ? WHERE id = ? AND room_id = ?"
+    "UPDATE files SET thumbnail_key = ?, thumbnail_size = ? WHERE id = ? AND room_id = ?"
   )
-    .bind(thumbnailKey, thumbnailSize, thumbnailMimeType, fileId, roomId)
+    .bind(thumbnailKey, thumbnailSize, fileId, roomId)
     .run();
 }
 

@@ -36,7 +36,6 @@ export interface FileRow {
   checksum: string | null;
   thumbnail_key: string | null;
   thumbnail_size: number | null;
-  thumbnail_mime_type: string | null;
 }
 
 export interface FolderRow {
