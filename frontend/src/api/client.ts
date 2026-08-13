@@ -85,9 +85,9 @@ export function downloadSelectedUrl(roomId: string, sessionToken: string, fileId
   return `${API_BASE_URL}/api/rooms/${roomId}/download-selected?fileIds=${ids}&token=${encodeURIComponent(sessionToken)}`;
 }
 
-// Small client-generated JPEG derivative for formats browsers can't render
-// natively (HEIC/HEIF) — see frontend/src/lib/heicThumbnail.ts. Distinct
-// from downloadFileUrl: this never touches the original object.
+// Small client-generated WebP (or JPEG fallback) derivative — see
+// frontend/src/lib/imagePreview.ts. Distinct from downloadFileUrl: this
+// never touches the original object.
 export function thumbnailUrl(roomId: string, fileId: string, sessionToken: string): string {
   return `${API_BASE_URL}/api/rooms/${roomId}/files/${fileId}/thumbnail?token=${encodeURIComponent(sessionToken)}`;
 }
@@ -100,7 +100,7 @@ export async function uploadThumbnail(
 ): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/files/${fileId}/thumbnail`, {
     method: "PUT",
-    headers: { Authorization: `Bearer ${sessionToken}`, "Content-Type": "application/octet-stream" },
+    headers: { Authorization: `Bearer ${sessionToken}`, "Content-Type": blob.type },
     body: blob,
   });
   if (!res.ok) {

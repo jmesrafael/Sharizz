@@ -11,7 +11,7 @@ import {
   uploadThumbnail,
 } from "../api/client";
 import { clearUploadSession, loadUploadSession, saveUploadSession, type UploadSession } from "../api/uploadSessions";
-import { generateThumbnail, needsClientThumbnail } from "../lib/heicThumbnail";
+import { generatePreview, isPreviewableImage } from "../lib/imagePreview";
 
 export interface UploadItem {
   key: string;
@@ -47,14 +47,15 @@ export function useUploads(
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, progress: Math.min(99, percent) } : it)));
   }, []);
 
-  // Best-effort: only formats browsers can't render natively (HEIC/HEIF)
-  // get a thumbnail attempt, and it only succeeds where the browser can
-  // actually decode the original (in practice, Safari/iOS). Failure here
-  // is silent and harmless — the file just falls back to today's behavior.
+  // Best-effort: every image gets a small WebP preview generated for fast
+  // grid loading, and it's the only way HEIC/HEIF becomes viewable at all
+  // outside Safari/iOS. Only succeeds where the browser can actually decode
+  // the original — failure here is silent and harmless, the file just
+  // falls back to rendering the full original in the grid.
   const maybeGenerateThumbnail = useCallback(
     (file: File, uploaded: FilePublic) => {
-      if (!needsClientThumbnail(uploaded.mimeType)) return;
-      generateThumbnail(file)
+      if (!isPreviewableImage(uploaded.mimeType)) return;
+      generatePreview(file)
         .then((blob) => (blob ? uploadThumbnail(roomId, sessionToken, uploaded.id, blob) : undefined))
         .then(() => onThumbnailReady?.(uploaded.id))
         .catch(() => {});

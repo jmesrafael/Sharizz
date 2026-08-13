@@ -442,12 +442,15 @@ files.get("/:id/files/:fileId", async (c) => {
   return new Response(object.body, { headers });
 });
 
-// Accepts a small JPEG derivative generated client-side (see
-// frontend/src/lib/heicThumbnail.ts) for formats browsers can't render
-// natively, e.g. HEIC/HEIF. Purely additive — the original object this
-// file's storage_key points to is never read or modified here, so
-// downloads always stay byte-for-byte regardless of whether a thumbnail
-// exists.
+// Accepts a small WebP (or JPEG, if the browser couldn't encode WebP)
+// derivative generated client-side (see frontend/src/lib/imagePreview.ts) —
+// either because the format needs it to be viewable at all (HEIC/HEIF), or
+// just to keep the grid fast for an otherwise-large photo. Purely additive —
+// the original object this file's storage_key points to is never read or
+// modified here, so downloads always stay byte-for-byte regardless of
+// whether a thumbnail exists.
+const ALLOWED_THUMBNAIL_MIME_TYPES = new Set(["image/webp", "image/jpeg"]);
+
 files.put("/:id/files/:fileId/thumbnail", async (c) => {
   const roomId = c.req.param("id");
   const fileId = c.req.param("fileId");
@@ -456,6 +459,11 @@ files.put("/:id/files/:fileId/thumbnail", async (c) => {
 
   const file = await getFileById(c.env, fileId, roomId);
   if (!file) return apiError(c, "FILE_NOT_FOUND", "File not found.");
+
+  const contentType = c.req.header("Content-Type") ?? "";
+  if (!ALLOWED_THUMBNAIL_MIME_TYPES.has(contentType)) {
+    return apiError(c, "INVALID_FILE_TYPE", "Thumbnail must be image/webp or image/jpeg.");
+  }
 
   const contentLength = Number(c.req.header("Content-Length") ?? "0");
   if (!contentLength || contentLength <= 0) {
@@ -473,7 +481,7 @@ files.put("/:id/files/:fileId/thumbnail", async (c) => {
   let stored;
   try {
     stored = await c.env.MEDIA_BUCKET.put(thumbnailKey, body, {
-      httpMetadata: { contentType: "image/jpeg" },
+      httpMetadata: { contentType },
       customMetadata: { roomId, fileId },
     });
   } catch {
@@ -489,7 +497,7 @@ files.put("/:id/files/:fileId/thumbnail", async (c) => {
   // Replacing an existing thumbnail (retry) — free the old bytes before
   // counting the new ones so room storage doesn't drift upward.
   const previousSize = file.thumbnail_size ?? 0;
-  await setFileThumbnail(c.env, fileId, roomId, thumbnailKey, stored.size);
+  await setFileThumbnail(c.env, fileId, roomId, thumbnailKey, stored.size, contentType);
   await incrementRoomStorage(c.env, roomId, stored.size - previousSize);
   await incrementClassAOps(c.env);
 
@@ -510,7 +518,8 @@ files.get("/:id/files/:fileId/thumbnail", async (c) => {
   await incrementClassBOps(c.env);
 
   const headers = new Headers();
-  headers.set("Content-Type", "image/jpeg");
+  // Rows written before thumbnail_mime_type existed were always JPEG.
+  headers.set("Content-Type", file.thumbnail_mime_type ?? "image/jpeg");
   headers.set("Cache-Control", "private, no-store");
   headers.set("Content-Length", String(file.thumbnail_size ?? 0));
   return new Response(object.body, { headers });

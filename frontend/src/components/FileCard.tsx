@@ -31,10 +31,11 @@ export default function FileCard({
   const [thumbFailed, setThumbFailed] = useState(false);
   const isImage = file.mimeType.startsWith("image/");
   const url = downloadFileUrl(roomId, file.id, sessionToken);
-  // A generated preview (see heicThumbnail.ts) is always browser-renderable,
-  // so prefer it over the original for formats like HEIC/HEIF that most
-  // browsers can't decode natively. Falls back to the original when no
-  // thumbnail exists — fine for browsers (Safari) that can render it directly.
+  // A generated preview (see lib/imagePreview.ts) is always browser-
+  // renderable and much lighter than the original, so prefer it for the
+  // grid whenever one exists — both for formats like HEIC/HEIF that most
+  // browsers can't decode natively, and just to keep the grid fast for
+  // large photos. Falls back to the original when no thumbnail exists.
   const thumbSrc = file.hasThumbnail ? thumbnailUrl(roomId, file.id, sessionToken) : url;
 
   // If the original failed to render (unsupported format) and a thumbnail
