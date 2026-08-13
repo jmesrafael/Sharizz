@@ -52,12 +52,17 @@ describe("file upload authorization", () => {
     expect(res.status).toBe(401);
   });
 
-  it("rejects an unsupported file type", async () => {
+  // Sharizz stores any file type — arbitrary/unrecognized mime types are
+  // stored as declared rather than rejected (they just render as a
+  // download-only placeholder in the grid instead of an inline preview).
+  it("accepts an arbitrary, non-media file type", async () => {
     const { room, sessionToken } = await createRoom();
-    const bytes = new TextEncoder().encode("not-an-allowed-type");
+    const bytes = new TextEncoder().encode("not-an-image-or-video");
 
-    const res = await uploadFile(room.id, sessionToken, "script.exe", bytes, "application/x-msdownload");
-    expect(res.status).toBe(400);
+    const res = await uploadFile(room.id, sessionToken, "notes.pdf", bytes, "application/pdf");
+    expect(res.status).toBe(201);
+    const body = await res.json<any>();
+    expect(body.mimeType).toBe("application/pdf");
   });
 
   it("saves file metadata in D1", async () => {

@@ -179,18 +179,3 @@ export interface MultipartCompleteRequest {
   folderId: string | null;
   parts: MultipartPart[];
 }
-
-export const ALLOWED_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/heic",
-  "image/heif",
-  "image/webp",
-  "image/gif",
-  "image/tiff",
-  "image/x-adobe-dng",
-  "video/mp4",
-  "video/quicktime",
-  "video/x-m4v",
-  "video/webm",
-]);

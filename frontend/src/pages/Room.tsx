@@ -12,6 +12,7 @@ import {
   getRoomState,
 } from "../api/client";
 import { getSessionToken, saveSessionToken } from "../api/roomSession";
+import { containsDirectory, stageFilesFromEntries, stageFilesFromFileList, type StagedFile } from "../lib/folderUpload";
 import CountdownTimer from "../components/CountdownTimer";
 import CopyCodeButton from "../components/CopyCodeButton";
 import CopyLinkButton from "../components/CopyLinkButton";
@@ -63,6 +64,7 @@ export default function Room() {
   const nameClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragCounter = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const marqueeDrag = useRef<{
     pointerId: number;
@@ -152,7 +154,7 @@ export default function Room() {
   }
 
   const ready = state.kind === "ready";
-  const { items, enqueueFiles, retry, dismiss } = useUploads(
+  const { items, enqueueFiles, enqueueEntries, retry, dismiss } = useUploads(
     roomId,
     ready ? state.sessionToken : "",
     onUploaded,
@@ -182,6 +184,49 @@ export default function Room() {
     if (chosen.length > 0) enqueueFiles(chosen, currentFolderId);
   }
 
+  // Recreates a folder upload's directory structure under baseFolderId,
+  // deepest-safe (a path's parent always gets created — or found in the
+  // cache — before the path itself), then routes each staged file into
+  // whichever folder its own relativeDir resolved to. Aborts loudly if a
+  // folder can't be created (name too long, room's folder cap hit, etc.)
+  // rather than silently dropping files into the wrong place.
+  async function uploadStagedFiles(staged: StagedFile[], baseFolderId: string | null) {
+    if (staged.length === 0) return;
+    setActionError(null);
+
+    const pathToFolderId = new Map<string, string | null>([["", baseFolderId]]);
+    const uniqueDirs = Array.from(new Set(staged.map((s) => s.relativeDir).filter((d) => d !== "")));
+    uniqueDirs.sort((a, b) => a.split("/").length - b.split("/").length);
+
+    try {
+      for (const dir of uniqueDirs) {
+        if (pathToFolderId.has(dir)) continue;
+        const segments = dir.split("/");
+        let parentPath = "";
+        for (const segment of segments) {
+          const path = parentPath ? `${parentPath}/${segment}` : segment;
+          if (!pathToFolderId.has(path)) {
+            const parentId = pathToFolderId.get(parentPath) ?? baseFolderId;
+            const folder = await createFolder(roomId, ready ? state.sessionToken : "", segment, parentId);
+            pathToFolderId.set(path, folder.id);
+            setFolders((prev) => [...prev, folder]);
+          }
+          parentPath = path;
+        }
+      }
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : "Couldn't recreate the folder structure.");
+      return;
+    }
+
+    enqueueEntries(
+      staged.map(({ file, relativeDir }) => ({
+        file,
+        folderId: pathToFolderId.get(relativeDir) ?? baseFolderId,
+      }))
+    );
+  }
+
   function onDragEnter(e: React.DragEvent) {
     e.preventDefault();
     if (!e.dataTransfer.types.includes("Files")) return;
@@ -206,6 +251,21 @@ export default function Room() {
     e.preventDefault();
     dragCounter.current = 0;
     setDragActive(false);
+
+    const items = e.dataTransfer.items;
+    if (items && items.length > 0 && containsDirectory(items)) {
+      // webkitGetAsEntry() must be called synchronously, before the browser
+      // clears the drop event's data — grab every entry now, then walk them
+      // (async) afterward.
+      const entries: FileSystemEntry[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const entry = items[i].webkitGetAsEntry?.();
+        if (entry) entries.push(entry);
+      }
+      stageFilesFromEntries(entries).then((staged) => uploadStagedFiles(staged, currentFolderId));
+      return;
+    }
+
     const dropped = Array.from(e.dataTransfer.files ?? []);
     handleFilesChosen(dropped);
   }
@@ -562,10 +622,22 @@ export default function Room() {
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*,video/*,.heic,.heif,.dng,.mov"
           style={{ display: "none" }}
           onChange={(e) => {
             handleFilesChosen(Array.from(e.target.files ?? []));
+            e.target.value = "";
+          }}
+        />
+        <input
+          ref={folderInputRef}
+          type="file"
+          multiple
+          // webkitdirectory/directory aren't in React's input typings but
+          // are supported by every major browser for "pick a whole folder".
+          {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files) uploadStagedFiles(stageFilesFromFileList(e.target.files), currentFolderId);
             e.target.value = "";
           }}
         />
@@ -573,6 +645,9 @@ export default function Room() {
           <div className="toolbar-group">
             <button type="button" className="btn btn-primary btn-small" onClick={() => fileInputRef.current?.click()}>
               + Upload
+            </button>
+            <button type="button" className="btn btn-secondary btn-small" onClick={() => folderInputRef.current?.click()}>
+              + Upload Folder
             </button>
             <button type="button" className="btn btn-secondary btn-small" onClick={() => setShowNewFolder((v) => !v)}>
               + Folder

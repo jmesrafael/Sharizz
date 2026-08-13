@@ -68,7 +68,6 @@ async function validateUpload(
   if (!rawName) return { ok: false, error: apiError(c, "VALIDATION_ERROR", "Missing file name.") };
   const originalName = sanitizeDisplayFilename(rawName);
   const mimeType = resolveMimeType(declaredType, originalName);
-  if (!mimeType) return { ok: false, error: apiError(c, "INVALID_FILE_TYPE", "This file type is not supported.") };
 
   const folderId = folderIdParam || null;
   if (folderId) {

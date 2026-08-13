@@ -212,9 +212,13 @@ export function useUploads(
     [roomId, sessionToken, runChunkedUpload, setProgress, setSuccess, setFailed]
   );
 
-  const enqueueFiles = useCallback(
-    (files: File[], folderId: string | null = null) => {
-      const newItems: UploadItem[] = files.map((file) => ({
+  // The general form — each file can target a different folder, which is
+  // what a folder upload needs (every file's target is wherever its
+  // relative directory got recreated). enqueueFiles below is the common
+  // case of "one folder for all of them" built on top of this.
+  const enqueueEntries = useCallback(
+    (entries: { file: File; folderId: string | null }[]) => {
+      const newItems: UploadItem[] = entries.map(({ file, folderId }) => ({
         key: `${file.name}-${file.size}-${crypto.randomUUID()}`,
         file,
         folderId,
@@ -225,6 +229,13 @@ export function useUploads(
       for (const item of newItems) startUpload(item.key, item.file, item.folderId);
     },
     [startUpload]
+  );
+
+  const enqueueFiles = useCallback(
+    (files: File[], folderId: string | null = null) => {
+      enqueueEntries(files.map((file) => ({ file, folderId })));
+    },
+    [enqueueEntries]
   );
 
   const retry = useCallback(
@@ -256,5 +267,5 @@ export function useUploads(
     [items, roomId, sessionToken]
   );
 
-  return { items, enqueueFiles, retry, dismiss };
+  return { items, enqueueFiles, enqueueEntries, retry, dismiss };
 }
