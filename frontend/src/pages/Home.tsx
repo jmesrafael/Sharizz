@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { LIMITS } from "@shared/types";
 import { createRoom, ApiError } from "../api/client";
 import { saveSessionToken } from "../api/roomSession";
-import { addRoomToHistory } from "../api/roomHistory";
+import { addRoomToHistory, getRoomHistory, type RoomHistoryEntry } from "../api/roomHistory";
 
 const FALLBACK_LOCKOUT_MS = 60 * 1000;
+
+function timeLeftLabel(createdAt: number): string {
+  const msLeft = createdAt + LIMITS.ROOM_LIFETIME_MS - Date.now();
+  if (msLeft <= 0) return "expiring soon";
+  const hours = Math.ceil(msLeft / (1000 * 60 * 60));
+  return `${hours}h left`;
+}
 
 export default function Home() {
   const navigate = useNavigate();
@@ -16,7 +24,22 @@ export default function Home() {
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const unlockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [history, setHistory] = useState<RoomHistoryEntry[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [joinCode, setJoinCode] = useState("");
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
+
   const locked = lockedUntil !== null;
+
+  useEffect(() => {
+    // Rooms are self-computed as 24h from creation — no network call needed
+    // just to show a countdown, and a stale/expired entry left over from a
+    // past visit quietly drops out of the list instead of lingering forever.
+    const now = Date.now();
+    const live = getRoomHistory().filter((h) => h.createdAt + LIMITS.ROOM_LIFETIME_MS > now);
+    setHistory(live);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -73,6 +96,39 @@ export default function Home() {
       }
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function toggleExpanded(id: string) {
+    setJoinError(null);
+    setJoinCode("");
+    setExpandedId((prev) => (prev === id ? null : id));
+  }
+
+  // Re-authenticates a room this device already knows about by re-typing
+  // its storage code — the same "/api/rooms" endpoint that creates a room
+  // for a time-code also joins an existing one for its room code, so this
+  // is just that flow with a fresh session token guaranteed at the end
+  // (useful when the token saved in local history has since expired even
+  // though the room itself is still live).
+  async function handleJoin(e: React.FormEvent) {
+    e.preventDefault();
+    setJoinError(null);
+    setJoining(true);
+    try {
+      const { room, sessionToken } = await createRoom(joinCode);
+      saveSessionToken(room.id, sessionToken);
+      addRoomToHistory({ id: room.id, roomName: room.roomName, sessionToken, createdAt: room.createdAt });
+      navigate(`/room/${room.id}`, { replace: true });
+    } catch (err) {
+      if (err instanceof ApiError && (err.code === "INVALID_CODE" || err.code === "TOO_MANY_ATTEMPTS")) {
+        setJoinError(err.message);
+      } else {
+        setJoinError(err instanceof ApiError ? err.message : "Couldn't open that storage.");
+      }
+      setJoinCode("");
+    } finally {
+      setJoining(false);
     }
   }
 
@@ -169,6 +225,51 @@ export default function Home() {
               {submitting ? "Checking…" : "Enter"}
             </button>
           </form>
+        )}
+
+        {!locked && history.length > 0 && (
+          <div className="history-list">
+            {history.map((entry) => (
+              <div key={entry.id} className="history-row">
+                <button
+                  type="button"
+                  className="history-row-main"
+                  style={{ cursor: "pointer", background: "none", border: "none", textAlign: "left", padding: 0 }}
+                  onClick={() => toggleExpanded(entry.id)}
+                >
+                  <span className="history-row-label">{entry.roomName}</span>
+                  <span className="history-row-meta">{timeLeftLabel(entry.createdAt)}</span>
+                </button>
+
+                {expandedId === entry.id && (
+                  <form className="field" style={{ marginTop: 8 }} onSubmit={handleJoin}>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      placeholder="Storage code"
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      minLength={4}
+                      maxLength={4}
+                      autoComplete="off"
+                      autoFocus
+                      required
+                    />
+                    {joinError && <div className="error-banner">{joinError}</div>}
+                    <button
+                      type="submit"
+                      className="btn btn-primary btn-small btn-block"
+                      disabled={joining || joinCode.length < 4}
+                      style={{ marginTop: 8 }}
+                    >
+                      {joining ? "Opening…" : "Open"}
+                    </button>
+                  </form>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
