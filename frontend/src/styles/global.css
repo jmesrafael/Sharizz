@@ -628,8 +628,13 @@ input {
 }
 
 .file-list {
-  column-width: var(--tile-size, 180px);
-  column-gap: 10px;
+  display: grid;
+  /* Square tiles, never more than 5 columns: the min column width is
+     whichever is larger — the chosen --tile-size, or the width needed to
+     fit exactly 5 across — so a small --tile-size still caps at 5 instead
+     of packing in as many as fit. */
+  grid-template-columns: repeat(auto-fill, minmax(max(var(--tile-size, 100px), calc((100% - 4 * 10px) / 5)), 1fr));
+  gap: 10px;
   /* Prevents a marquee drag from also highlighting card text as the
      pointer sweeps across it. */
   user-select: none;
@@ -638,8 +643,6 @@ input {
 .file-card {
   display: flex;
   flex-direction: column;
-  break-inside: avoid;
-  margin-bottom: 10px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -651,6 +654,7 @@ input {
   display: block;
   position: relative;
   width: 100%;
+  aspect-ratio: 1;
   padding: 0;
   border: none;
   cursor: pointer;
@@ -723,7 +727,8 @@ input {
 
 .file-thumb {
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: cover;
   display: block;
   -webkit-user-drag: none;
   user-select: none;

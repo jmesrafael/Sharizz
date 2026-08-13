@@ -25,7 +25,10 @@ import UploadProgressList from "../components/UploadProgressList";
 import { useUploads } from "../hooks/useUploads";
 import { useRoomEvents } from "../hooks/useRoomEvents";
 
-const GRID_SIZES = { small: 120, medium: 180, large: 260 } as const;
+// Capped at 5 columns regardless of size (see .file-list in global.css) —
+// these just set the minimum a tile can shrink to before wrapping to fewer
+// columns, kept small so the grid stays fast and dense by default.
+const GRID_SIZES = { small: 70, medium: 100, large: 140 } as const;
 
 type LoadState =
   | { kind: "loading" }
