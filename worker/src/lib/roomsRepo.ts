@@ -35,16 +35,18 @@ export async function insertRoom(
     .run();
 }
 
-// Room codes are 4 digits, same shape as the time-gate code, so they fit the
-// landing page's existing numeric input. Only 10,000 possible values, so
-// uniqueness is checked (and retried on collision) against currently-active
+// Room codes are 6 digits — deliberately longer than the 4-digit time-gate
+// code so the two can never collide/be confused with each other when typed
+// into the same landing-page field (a 4-digit entry is always interpreted
+// as a time code, isValidTimeCode's regex won't match anything longer).
+// Uniqueness is checked (and retried on collision) against currently-active
 // rooms rather than relied on as a DB constraint — expired rows linger until
 // the hourly cron sweep and shouldn't block reuse of their old code.
 const ROOM_CODE_GEN_ATTEMPTS = 20;
 
 export async function generateUniqueRoomCode(env: Env, now: number): Promise<string> {
   for (let attempt = 0; attempt < ROOM_CODE_GEN_ATTEMPTS; attempt++) {
-    const code = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+    const code = String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0");
     const existing = await getRoomByCode(env, code, now);
     if (!existing) return code;
   }

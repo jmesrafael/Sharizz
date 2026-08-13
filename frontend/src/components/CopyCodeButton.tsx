@@ -1,5 +1,8 @@
 import { useState } from "react";
 
+// Shows the room's actual join code (not a generic "Copy Code" label) so
+// the owner can read it off directly; clicking it copies it, same gesture
+// as before, just with the value itself as the target instead of a button.
 export default function CopyCodeButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -14,8 +17,8 @@ export default function CopyCodeButton({ code }: { code: string }) {
   }
 
   return (
-    <button type="button" className="btn btn-secondary btn-small" onClick={handleCopy}>
-      {copied ? "Copied!" : "Copy Code"}
+    <button type="button" className="btn btn-secondary btn-small room-code-btn" onClick={handleCopy}>
+      {copied ? "Copied!" : code}
     </button>
   );
 }

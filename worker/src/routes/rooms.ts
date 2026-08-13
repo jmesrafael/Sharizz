@@ -80,10 +80,11 @@ rooms.post("/", async (c) => {
   const code = (body.code ?? "").toString().trim();
   const now = Date.now();
 
-  // The field is multi-purpose: the current clock time creates a fresh
-  // room, while a code copied from inside an existing (still-live) room
-  // ("Copy Code") jumps straight back into it instead. Time codes are
-  // checked first since they're the more time-sensitive interpretation.
+  // The field is multi-purpose: the current clock time (4 digits) creates
+  // a fresh room, while a 6-digit code copied from inside an existing
+  // (still-live) room jumps straight back into it instead. Time codes are
+  // checked first since they're the more time-sensitive interpretation —
+  // the two never collide since isValidTimeCode only matches 4 digits.
   if (isValidTimeCode(code)) {
     await clearAttempts(c.env, GATE_KEY, clientKey);
 

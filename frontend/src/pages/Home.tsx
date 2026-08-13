@@ -167,9 +167,9 @@ export default function Home() {
                   pattern="[0-9]*"
                   placeholder="Password"
                   value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   minLength={4}
-                  maxLength={4}
+                  maxLength={6}
                   autoComplete="off"
                   autoFocus
                   required
@@ -249,9 +249,9 @@ export default function Home() {
                       pattern="[0-9]*"
                       placeholder="Storage code"
                       value={joinCode}
-                      onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                      minLength={4}
-                      maxLength={4}
+                      onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      minLength={6}
+                      maxLength={6}
                       autoComplete="off"
                       autoFocus
                       required
@@ -260,7 +260,7 @@ export default function Home() {
                     <button
                       type="submit"
                       className="btn btn-primary btn-small btn-block"
-                      disabled={joining || joinCode.length < 4}
+                      disabled={joining || joinCode.length < 6}
                       style={{ marginTop: 8 }}
                     >
                       {joining ? "Opening…" : "Open"}

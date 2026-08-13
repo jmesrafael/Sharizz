@@ -287,6 +287,28 @@ input {
   width: 100%;
 }
 
+.room-code-btn {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.08em;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.back-btn:hover {
+  background: var(--bg-elevated);
+  border-color: #33333a;
+}
+
 .btn-small {
   padding: 0 12px;
   min-height: 32px;
